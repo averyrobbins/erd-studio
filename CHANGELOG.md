@@ -8,6 +8,10 @@ The `Unreleased` heading below is renamed to the released version by the deploy 
 Releases are patch bumps by default. To ship a minor or major version, write it into the
 heading — `## Unreleased — 1.0.0` — and the workflow releases exactly that.
 
+## 1.0.2 — 2026-09-15
+
+- feat: build the physical stage from the dbt project, not the manifest (#62)
+
 ## 1.0.1 — 2026-09-12
 
 ### Added
