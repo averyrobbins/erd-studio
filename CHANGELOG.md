@@ -8,7 +8,7 @@ The `Unreleased` heading below is renamed to the released version by the deploy 
 Releases are patch bumps by default. To ship a minor or major version, write it into the
 heading — `## Unreleased — 1.0.0` — and the workflow releases exactly that.
 
-## Unreleased
+## 1.0.3 — 2026-09-19
 
 - **Licence change: ERD Studio is now under the PolyForm Shield License 1.0.0** (previously MIT).
   It stays free to use, modify and share, at home or at work, for any purpose except offering a
