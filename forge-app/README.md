@@ -1,5 +1,9 @@
 # Forge automation action add comment
 
+## Licence
+
+Licensed with the rest of the repository under the [PolyForm Shield License 1.0.0](../LICENSE).
+
 Forge automation action is currently in EAP, see the [documentation](https://developer.atlassian.com/platform/forge/manifest-reference/modules/automation-action/) for more details.
 
 This project contains a Forge app written in Javascript that adds a new custom action in Automation that can be used to add a Jira comment.
