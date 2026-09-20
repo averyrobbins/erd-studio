@@ -35,3 +35,21 @@ export function findDuplicateNames(names: readonly string[]): string[] {
   }
   return Array.from(duplicates);
 }
+
+/**
+ * How a project's engine folds the case of *unquoted* identifiers, and so how a
+ * logical column name (always typed lowercase, per `COLUMN_NAME_PATTERN`) is
+ * matched against the exact spelling a framework reports back:
+ *
+ * - `lower` — the engine lowercases unquoted identifiers (Postgres) or ignores
+ *   case entirely (DuckDB, BigQuery, Spark): `customer_id` ≡ `customer_id`.
+ * - `upper` — the engine uppercases unquoted identifiers (Snowflake, Oracle):
+ *   a logical `customer_id` names the physical `CUSTOMER_ID`.
+ * - `exact` — identifiers are case-sensitive (ClickHouse, MySQL) or the
+ *   folding is unknown: only an exact spelling matches.
+ *
+ * Matching is always exact-first, then folded among the names still unclaimed,
+ * so a quoted `"id"` beside an unquoted `ID` (both real on Snowflake) never
+ * collapse into one column. See `src/services/identifierMatching.ts`.
+ */
+export type IdentifierFolding = 'lower' | 'upper' | 'exact';

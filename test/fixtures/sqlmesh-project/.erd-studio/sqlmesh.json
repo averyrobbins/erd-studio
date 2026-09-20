@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "provider": "sqlmesh",
-  "generatedAt": "2026-09-20T22:21:28.610626+00:00",
+  "generatedAt": "2026-09-20T22:31:27.302241+00:00",
   "sqlmeshVersion": "0.236.1",
   "gateway": null,
   "config": null,
@@ -16,6 +16,7 @@
       "sourcePath": "models/dim_customer.sql",
       "columnsKnown": true,
       "columnSource": "declared",
+      "identifierFolding": "lower",
       "columns": [
         {
           "name": "customer_id",
@@ -44,6 +45,7 @@
       "sourcePath": "models/fct_order.sql",
       "columnsKnown": true,
       "columnSource": "inferred",
+      "identifierFolding": "lower",
       "columns": [
         {
           "name": "order_id",
@@ -77,6 +79,7 @@
       "sourcePath": "models/python_models.py",
       "columnsKnown": true,
       "columnSource": "inferred",
+      "identifierFolding": "lower",
       "columns": [
         {
           "name": "id",
@@ -96,6 +99,7 @@
       "sourcePath": "models/python_models.py",
       "columnsKnown": true,
       "columnSource": "declared",
+      "identifierFolding": "lower",
       "columns": [
         {
           "name": "id",
@@ -120,6 +124,7 @@
       "sourcePath": "models/seed.sql",
       "columnsKnown": true,
       "columnSource": "declared",
+      "identifierFolding": "lower",
       "columns": [
         {
           "name": "id",
@@ -144,6 +149,7 @@
       "sourcePath": "external_models.yaml",
       "columnsKnown": true,
       "columnSource": "declared",
+      "identifierFolding": "lower",
       "columns": [
         {
           "name": "event_id",
@@ -168,6 +174,7 @@
       "sourcePath": "models/other_customer.sql",
       "columnsKnown": true,
       "columnSource": "inferred",
+      "identifierFolding": "lower",
       "columns": [
         {
           "name": "customer_id",

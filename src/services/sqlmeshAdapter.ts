@@ -4,11 +4,16 @@ import { createHash } from 'crypto';
 import type { SqlmeshSnapshot, ProjectModel } from '../types/project';
 import type { ManifestData } from '../types/manifest';
 import type { DisplayDomain, ExistingModelPreview } from '../types/display';
-import type { UnifiedDomain } from '../types/semantic';
+import type { SemanticModel, UnifiedDomain } from '../types/semantic';
+import type { IdentifierFolding } from '../types/naming';
 import type { ProjectAdapter, ProjectMetadata } from './projectAdapter';
+import { findByIdentifier, logicalSpelling, sameIdentifier } from './identifierMatching';
 
 const MAX_BYTES = 32 * 1024 * 1024;
 const aliasPattern = /^[a-z][a-z0-9_]*$/;
+const FOLDINGS: readonly IdentifierFolding[] = ['lower', 'upper', 'exact'];
+/** Exports written before `identifierFolding` existed are matched exactly, as they always were. */
+const foldingOf = (m: ProjectModel): IdentifierFolding => m.identifierFolding ?? 'exact';
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every(x => typeof x === 'string');
 const relative = (p: string) => !!p && !path.isAbsolute(p) && !p.includes('\\') && !p.split('/').includes('..') && !p.includes('\0');
@@ -29,6 +34,7 @@ export function parseSqlmeshSnapshot(raw: string): SqlmeshSnapshot {
       || !m.id || !aliasPattern.test(m.name as string) || ids.has(m.id as string) || names.has(m.name as string)
       || !(m.sourcePath === null || (typeof m.sourcePath === 'string' && relative(m.sourcePath)))
       || !['declared', 'inferred'].includes(m.columnSource as string) || typeof m.columnsKnown !== 'boolean'
+      || !(m.identifierFolding === undefined || FOLDINGS.includes(m.identifierFolding as IdentifierFolding))
       || !Array.isArray(m.columns) || !Array.isArray(m.uniqueKeys)) throw new Error('Invalid or duplicate SQLMesh model.');
     const cols = new Set<string>();
     for (const c of m.columns) {
@@ -106,11 +112,31 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
         observed: w.models.filter(m => m.status === 'observed').length, total: w.models.length } } : {}) };
   }
   getModel(name: string): ProjectModel | undefined { return this.snapshot?.models.find(m => m.name === name); }
+  /**
+   * Cardinality from single-column uniqueness evidence. Column names may be
+   * given in either spelling — the export's or the logical design's — so
+   * `customer_id` finds Snowflake's `CUSTOMER_ID` unique key.
+   */
   relationshipCardinality(fromModel: string, fromColumn: string, toModel: string, toColumn: string) {
-    const one = (name: string, col: string) => this.getModel(name)?.uniqueKeys.some(k => k.length === 1 && k[0] === col);
+    const one = (name: string, col: string) => {
+      const model = this.getModel(name);
+      return !!model && model.uniqueKeys.some(k => k.length === 1 && sameIdentifier(k[0], col, foldingOf(model)));
+    };
     return one(fromModel, fromColumn)
       ? (one(toModel, toColumn) ? 'one-to-one' as const : 'one-to-many' as const)
       : (one(toModel, toColumn) ? 'many-to-one' as const : 'many-to-many' as const);
+  }
+  /**
+   * A logical model seeded from the export for Add Existing Model: columns take
+   * their logical spelling (lowercase wherever the engine folds case), so the
+   * yml satisfies `COLUMN_NAME_PATTERN` and still matches the physical names.
+   */
+  seedModel(name: string): SemanticModel | undefined {
+    const m = this.getModel(name);
+    if (!m) return undefined;
+    const folding = foldingOf(m);
+    return { name: m.name, schema: m.schema, description: m.description,
+      columns: m.columns.map(c => ({ name: logicalSpelling(c.name, folding), dataType: c.dataType ?? 'unknown', description: c.description })) };
   }
 
   async load(): Promise<ProjectMetadata> {
@@ -134,8 +160,14 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
         manifest.uniqueColumns.set(m.name, new Set(m.uniqueKeys.filter(k => k.length === 1).map(k => k[0])));
         manifest.compositeUniqueGroups.set(m.name, m.uniqueKeys.filter(k => k.length > 1));
       }
-      manifest.relationshipTests = snapshot.relationships.map(r => ({ fromModel: byId.get(r.fromId)!.name,
-        fromColumn: r.fromColumn, toModel: byId.get(r.toId)!.name, toColumn: r.toColumn }));
+      // Consumed by Add Existing Model, which writes these into the domain file,
+      // so column names carry their logical spelling; `relationshipCardinality`
+      // folds when it looks the uniqueness evidence up again.
+      manifest.relationshipTests = snapshot.relationships.map(r => {
+        const from = byId.get(r.fromId)!; const to = byId.get(r.toId)!;
+        return { fromModel: from.name, fromColumn: logicalSpelling(r.fromColumn, foldingOf(from)),
+          toModel: to.name, toColumn: logicalSpelling(r.toColumn, foldingOf(to)) };
+      });
       this.snapshot = snapshot;
       this.signature = signature;
       this.diagnostics = diagnostics;
@@ -194,16 +226,24 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
       const actual = this.getModel(logical.name);
       if (!actual) return { name: logical.name, schema: '', description: logical.description ?? '', columns: [], existsInProject: false, missingReason: 'absent' as const };
       const source = actual.columnSource === 'declared' ? 'sqlmesh-declared' as const : 'sqlmesh-inferred' as const;
+      const folding = foldingOf(actual);
       const warehouse = this.snapshot?.warehouse?.models.find(m => m.id === actual.id);
       const observed = warehouse?.status === 'observed' ? warehouse.columns : [];
-      const columns = new Map(actual.columns.map(c => [c.name, c]));
-      for (const c of observed) columns.set(c.name, { ...c, description: columns.get(c.name)?.description ?? c.description });
+      // Observed columns replace their source counterpart (observed types win)
+      // and observed-only columns are appended; the source spelling is kept.
+      const columns = actual.columns.map(c => ({ ...c }));
+      for (const c of observed) {
+        const existing = findByIdentifier(columns, c.name, folding);
+        if (existing) { existing.dataType = c.dataType; existing.description ||= c.description; }
+        else columns.push({ ...c });
+      }
       return { name: logical.name, schema: actual.schema, description: actual.description,
         qualifiedName: actual.id, columnsKnown: actual.columnsKnown || warehouse?.status === 'observed', existsInProject: true, warehouse,
+        identifierFolding: folding,
         rationale: logical.rationale, grain: logical.grain, modelRole: logical.modelRole,
         provenance: { columns: observed.length ? ['sqlmesh-observed' as const, source] : [source], types: observed.length ? 'sqlmesh-observed' as const : source },
-        columns: [...columns.values()].map(c => {
-          const design = (logical.columns ?? []).find(l => l.name === c.name);
+        columns: columns.map(c => {
+          const design = findByIdentifier(logical.columns ?? [], c.name, folding);
           return { name: c.name, dataType: c.dataType ?? '', description: c.description,
             isPrimaryKey: design?.isPrimaryKey ?? false, isForeignKey: design?.isForeignKey ?? false,
             isNaturalKey: design?.isNaturalKey ?? false, scdType: design?.scdType, additiveType: design?.additiveType };

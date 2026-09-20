@@ -95,6 +95,19 @@ SELECT 1::INT AS id, 2::INT AS "id";
         model = next(m for m in result["models"] if m["id"].endswith('."CASE_SENSITIVE"'))
         self.assertEqual([c["name"] for c in model["columns"]], ["ID", "id"])
         self.assertEqual(model["uniqueKeys"], [["ID"], ["id"]])
+        # The folding tells the editor a logical `id` names the unquoted `ID` here,
+        # while the DuckDB fixture models fold to lowercase.
+        self.assertEqual(model["identifierFolding"], "upper")
+        self.assertEqual({m["identifierFolding"] for m in result["models"] if m["id"] != model["id"]}, {"lower"})
+
+    def test_identifier_folding_follows_the_dialect(self):
+        self.assertEqual(exporter.identifier_folding("duckdb"), "lower")
+        self.assertEqual(exporter.identifier_folding("postgres"), "lower")
+        self.assertEqual(exporter.identifier_folding("bigquery"), "lower")
+        self.assertEqual(exporter.identifier_folding("snowflake"), "upper")
+        self.assertEqual(exporter.identifier_folding("oracle"), "upper")
+        self.assertEqual(exporter.identifier_folding("clickhouse"), "exact")
+        self.assertEqual(exporter.identifier_folding("not_a_dialect"), "exact")
 
     def test_fk_target_missing_from_dependencies_is_diagnosed_but_still_exported(self):
         # SQLMesh builds the DAG from the query, not from audits: a parent that the

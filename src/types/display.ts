@@ -84,6 +84,12 @@ export interface DisplayModel {
   warehouse?: import('./project').WarehouseModelObservation;
   qualifiedName?: string;
   columnsKnown?: boolean;
+  /**
+   * How this model's engine folds identifier case; drives how its columns are
+   * matched against the other stage. Unset means the domain default
+   * (`identifierCaseSensitive` → exact, otherwise lowercase).
+   */
+  identifierFolding?: import('./naming').IdentifierFolding;
   name: string;
   schema: string;
   description: string;

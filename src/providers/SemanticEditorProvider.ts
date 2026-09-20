@@ -95,8 +95,9 @@ import type { ReportTrackingService } from '../services/reportTrackingService';
 import type { CatalogService } from '../services/catalogService';
 import type { ProjectAdapter } from '../services/projectAdapter';
 import { SqlmeshProjectAdapter } from '../services/sqlmeshAdapter';
-import { buildSqlmeshSyncPlan, applySqlmeshLogicalPlan, captureSqlmeshInputs, assertSqlmeshPlanCurrent } from '../services/sqlmeshSync';
+import { buildSqlmeshSyncPlan, applySqlmeshLogicalPlan, captureSqlmeshInputs, assertSqlmeshPlanCurrent, foldingByModel } from '../services/sqlmeshSync';
 import type { SqlmeshSyncPlan } from '../services/sqlmeshSync';
+import { sameIdentifier } from '../services/identifierMatching';
 import type { CatalogData } from '../types/catalog';
 import { OwnWriteTracker, ownWrites } from '../services/ownWriteTracker';
 import type {
@@ -3104,6 +3105,11 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
           const ymlModel = seedYmlData.models.get(payload.modelName);
           if (ymlModel) {
             seededModel = this.logicalModelService.ymlToSemanticModel(ymlModel);
+          } else if (this.projectAdapter instanceof SqlmeshProjectAdapter) {
+            // Columns take their logical spelling (lowercase wherever the engine
+            // folds case) so the new yml satisfies COLUMN_NAME_PATTERN and still
+            // matches the export's `CUSTOMER_ID` on comparison.
+            seededModel = this.projectAdapter.seedModel(payload.modelName);
           } else {
             const manifest = await this.loadProjectManifest();
             const manifestModel = manifest.models.get(payload.modelName);
@@ -3211,14 +3217,17 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
           const existingPositions = (viewConfig.positions ?? {}) as Record<string, NodePosition>;
           const newPosition = findOpenPosition(existingPositions);
 
-          // Build columns from yml (primary) or manifest (fallback)
+          // Build columns from yml (primary) or manifest (fallback). A SQLMesh
+          // export seeds through the adapter so names take their logical spelling.
+          const seeded = !ymlModel && this.projectAdapter instanceof SqlmeshProjectAdapter
+            ? this.projectAdapter.seedModel(payload.modelName)?.columns : undefined;
           const columns = ymlModel
             ? ymlModel.columns.map((col) => ({
                 name: col.name,
                 dataType: col.dataType ?? manifestModel?.columns.find((mc) => mc.name === col.name)?.data_type ?? 'unknown',
                 description: col.description || '',
               }))
-            : manifestModel!.columns.map((col) => ({
+            : seeded ?? manifestModel!.columns.map((col) => ({
                 name: col.name,
                 dataType: col.data_type ?? 'unknown',
                 description: col.description,
@@ -3874,7 +3883,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     if (plan.direction === 'metadata-to-logical') {
       // Validate the complete patch before presenting it as executable.
       applySqlmeshLogicalPlan(plan, context.unified, context.physical);
-      this.checkSqlmeshSharedRemovals(plan, document.uri.fsPath, context.semanticDir);
+      this.checkSqlmeshSharedRemovals(plan, document.uri.fsPath, context.semanticDir, context.physical);
     }
     const text = JSON.stringify(plan, null, 2) + '\n';
     const filePath = path.join(this.workspaceRoot, context.semanticDir, '.sync-plan.json');
@@ -3885,14 +3894,19 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     await vscode.window.showTextDocument(vscode.Uri.file(filePath), { preview: true, viewColumn: vscode.ViewColumn.Beside });
   }
 
-  private checkSqlmeshSharedRemovals(plan: SqlmeshSyncPlan, domainFile: string, semanticDir: string): void {
+  private checkSqlmeshSharedRemovals(plan: SqlmeshSyncPlan, domainFile: string, semanticDir: string, physical: DisplayDomain): void {
     const removals = plan.columns.filter(c => c.action === 'remove-column-from-logical');
     if (!removals.length) return;
+    // A removal names the export's spelling; other domains hold the logical one.
+    const foldingOf = foldingByModel(physical);
+    const references = (r: { fromModel: string; fromColumn: string; toModel: string; toColumn: string }, model: string, column: string) =>
+      (r.fromModel === model && sameIdentifier(r.fromColumn, column, foldingOf(model)))
+      || (r.toModel === model && sameIdentifier(r.toColumn, column, foldingOf(model)));
     for (const other of this.domainService.listDomains(this.workspaceRoot, semanticDir)) {
       if (other.filePath === domainFile) continue;
       const domain = this.domainService.getDomain(other.filePath);
       for (const c of removals) {
-        if (domain.logical.relationships.some(r => relationshipReferencesColumn(r, c.modelName, c.columnName))) {
+        if (domain.logical.relationships.some(r => references(r, c.modelName, c.columnName))) {
           throw new Error(`Cannot remove ${c.modelName}.${c.columnName}: it is referenced by a relationship in ${other.domain}. Update that domain first.`);
         }
       }
@@ -3912,7 +3926,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
   private async handleApplySqlmeshLogicalSync(panelKey: string, document: vscode.TextDocument, webview: vscode.Webview): Promise<void> {
     const context = await this.currentSqlmeshPlan(panelKey);
     const patch = applySqlmeshLogicalPlan(context.plan, context.unified, context.physical);
-    this.checkSqlmeshSharedRemovals(context.plan, document.uri.fsPath, context.semanticDir);
+    this.checkSqlmeshSharedRemovals(context.plan, document.uri.fsPath, context.semanticDir, context.physical);
     const success = await this.applyDomainEdit(document, section => { section.relationships = patch.relationships; },
       { webview, stage: 'logical', modelFiles: { save: patch.models.map(model => ({ model })) }, errorLabel: 'SQLMesh logical sync could not be applied.' });
     if (success) {

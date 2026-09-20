@@ -42,6 +42,26 @@ class InspectionUnavailable(ValueError):
     """A credential-free reason suitable for a saved diagnostic."""
 
 
+def identifier_folding(dialect: str) -> str:
+    """How the dialect folds unquoted identifiers: the key ERD Studio matches logical names by.
+
+    Logical designs spell columns lowercase; engines report them folded. Without this
+    a Snowflake project compares `customer_id` against `CUSTOMER_ID` and matches nothing.
+    """
+    from sqlglot.dialects.dialect import Dialect
+
+    try:
+        strategy = Dialect.get_or_raise(dialect).NORMALIZATION_STRATEGY.name
+    except (ValueError, AttributeError):
+        # An unknown dialect gets the conservative choice: match spelling exactly.
+        return "exact"
+    if strategy in ("LOWERCASE", "CASE_INSENSITIVE"):
+        return "lower"
+    if strategy in ("UPPERCASE", "CASE_INSENSITIVE_UPPERCASE"):
+        return "upper"
+    return "exact"
+
+
 def readonly_duckdb_adapter(connection, root: Path):
     """Bypass connection initialization SQL/extensions; enforce read-only in DuckDB itself."""
     import duckdb
@@ -227,6 +247,7 @@ def export_project(root: Path, semantic: Path, gateway: str | None, config: str 
                 "kind": model.kind.name.value, "sourcePath": source_path,
                 "columnsKnown": types is not None,
                 "columnSource": "declared" if model.columns_to_types_ is not None else "inferred",
+                "identifierFolding": identifier_folding(model.dialect),
                 "columns": [{"name": name, "dataType": None if dtype.is_type(exp.DataType.Type.UNKNOWN) else dtype.sql(dialect=model.dialect),
                              "description": descriptions.get(name, "")} for name, dtype in (types or {}).items()],
                 "uniqueKeys": keys,

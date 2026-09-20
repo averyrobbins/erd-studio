@@ -1,4 +1,6 @@
 /** Versioned, credential-free interchange format for native SQLMesh projects. */
+import type { IdentifierFolding } from './naming';
+
 export type ProjectProvider = 'dbt' | 'sqlmesh';
 
 export interface ProjectColumn {
@@ -21,6 +23,12 @@ export interface ProjectModel {
   columnsKnown: boolean;
   columnSource: 'declared' | 'inferred';
   uniqueKeys: string[][];
+  /**
+   * How the model's dialect folds unquoted identifiers, from SQLGlot's
+   * normalization strategy. Absent in exports older than this field: those
+   * are matched exactly until refreshed.
+   */
+  identifierFolding?: IdentifierFolding;
 }
 
 export interface ProjectRelationship {

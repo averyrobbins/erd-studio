@@ -64,7 +64,19 @@ To match an existing logical model, create `.erd-studio/sqlmesh-bindings.json`:
 
 Refresh after editing bindings. Renaming a bound logical model requires updating
 its binding too. Bindings are one-to-one; changing the catalog changes identity.
-SQLMesh IDs and column case are preserved through the metadata adapter/comparison.
+
+Column names are exported exactly as SQLMesh normalises them for the model's
+dialect (`customer_id` on DuckDB, `CUSTOMER_ID` on Snowflake, a quoted `"id"` as
+written), and each model records how its dialect folds unquoted identifiers
+(`identifierFolding`: `lower`, `upper` or `exact`, from SQLGlot's normalisation
+strategy). The logical design keeps typing columns lowercase: comparison, sync
+and Add Existing Model pair names exactly first and then by that folding, so a
+logical `customer_id` is the same column as Snowflake's `CUSTOMER_ID`, while a
+quoted `"id"` beside an unquoted `ID` stays a separate column. Whatever sync or
+import writes into the design takes the lowercase spelling wherever the engine
+folds case. Exports made before this field existed are matched exactly until
+refreshed; on case-sensitive dialects (ClickHouse, MySQL) an uppercase column
+name cannot be expressed in the design and is reported as a difference.
 
 For a single-column FK, copy [erd_relationship.sql](audits/erd_relationship.sql)
 into your project's `audits/` folder and attach it to the child model:

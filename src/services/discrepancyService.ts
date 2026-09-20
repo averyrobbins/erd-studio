@@ -15,21 +15,13 @@ import type {
   ColumnDiscrepancy,
   RelationshipDiscrepancy,
 } from '../types/discrepancy';
-import { normaliseName } from './nameUtils';
+import { normaliseName as foldModelName } from './nameUtils';
+import { foldIdentifier, matchIdentifiers } from './identifierMatching';
+import type { IdentifierFolding } from '../types/naming';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Composite key for matching relationships across stages.
- * Model and column names are matched case-insensitively (dbt identifiers are
- * case-insensitive on most warehouses); raw names are preserved on the
- * resulting discrepancy entries for display.
- */
-function relationshipKey(r: { fromModel: string; fromColumn: string; toModel: string; toColumn: string }, key = normaliseName): string {
-  return [r.fromModel, r.fromColumn, r.toModel, r.toColumn].map(key).join('|');
-}
 
 /**
  * Alias map: the spellings dbt adapters actually emit → canonical type name.
@@ -267,21 +259,20 @@ function compareColumns(
   sourceModel: DisplayModel,
   targetModel: DisplayModel,
   stubColumns: boolean,
-  normaliseName: (name: string) => string,
+  folding: IdentifierFolding,
 ): ColumnDiscrepancy[] {
   // Checked on BOTH sides: physical is the default comparison SOURCE, and an
   // empty source column list makes every logical column report as 'missing'.
   if (hasNoColumnEvidence(sourceModel) || hasNoColumnEvidence(targetModel)) { return []; }
 
-  // Keyed by normalised name so `CUSTOMER_ID` (yml) matches `customer_id` (logical).
-  const targetColumnMap = new Map(targetModel.columns.map((c) => [normaliseName(c.name), c]));
-  const visited = new Set<string>();
+  // Paired exactly first, then by the model's folding, so `CUSTOMER_ID` (a
+  // Snowflake export, or a dbt yml) matches `customer_id` (logical) while a
+  // quoted `"id"` beside `ID` stays its own column.
+  const { pairs, unmatchedTarget } = matchIdentifiers(sourceModel.columns, targetModel.columns, folding);
   const result: ColumnDiscrepancy[] = [];
 
   for (const col of sourceModel.columns) {
-    const key = normaliseName(col.name);
-    const targetCol = targetColumnMap.get(key);
-    visited.add(key);
+    const targetCol = pairs.get(col);
 
     if (!targetCol) {
       result.push({ name: col.name, status: 'extra', sourceDataType: col.dataType });
@@ -318,10 +309,8 @@ function compareColumns(
 
   // Columns in target but not source — suppressed for stub models
   if (!stubColumns) {
-    for (const col of targetModel.columns) {
-      if (!visited.has(normaliseName(col.name))) {
-        result.push({ name: col.name, status: 'missing', targetDataType: col.dataType });
-      }
+    for (const col of unmatchedTarget) {
+      result.push({ name: col.name, status: 'missing', targetDataType: col.dataType });
     }
   }
 
@@ -335,8 +324,13 @@ function compareRelationships(
   sourceRels: DisplayRelationship[],
   targetRels: DisplayRelationship[],
   normaliseName: (name: string) => string,
+  foldingFor: (modelName: string) => IdentifierFolding,
 ): RelationshipDiscrepancy[] {
-  const relKey = (r: DisplayRelationship) => relationshipKey(r, normaliseName);
+  // Model names fold like models; each column folds like the model it belongs to.
+  const relKey = (r: DisplayRelationship) => [
+    normaliseName(r.fromModel), foldIdentifier(r.fromColumn, foldingFor(r.fromModel)),
+    normaliseName(r.toModel), foldIdentifier(r.toColumn, foldingFor(r.toModel)),
+  ].join('|');
   const targetMap = new Map(targetRels.map((r) => [relKey(r), r]));
   const visited = new Set<string>();
   const result: RelationshipDiscrepancy[] = [];
@@ -410,8 +404,17 @@ export function compare(
   target: DisplayDomain,
   stubColumnModels: ReadonlySet<string> = new Set(),
 ): DiscrepancyReport {
-  const normaliseName = source.identifierCaseSensitive || target.identifierCaseSensitive
-    ? (name: string) => name : (name: string) => name.trim().toLowerCase();
+  const caseSensitive = !!(source.identifierCaseSensitive || target.identifierCaseSensitive);
+  const normaliseName = caseSensitive ? (name: string) => name : foldModelName;
+  // Column matching folds per model: a physical model says how its engine
+  // folds case (`identifierFolding`); a model that says nothing gets the
+  // domain default — exact for a case-sensitive domain, lowercase otherwise.
+  const defaultFolding: IdentifierFolding = caseSensitive ? 'exact' : 'lower';
+  const foldings = new Map<string, IdentifierFolding>();
+  for (const m of [...source.models, ...target.models]) {
+    if (m.identifierFolding && !foldings.has(normaliseName(m.name))) foldings.set(normaliseName(m.name), m.identifierFolding);
+  }
+  const foldingFor = (modelName: string): IdentifierFolding => foldings.get(normaliseName(modelName)) ?? defaultFolding;
   // Models the dbt project does not have are dropped from BOTH sides before
   // anything is compared. The physical stage now emits them so the canvas can
   // ghost them, but a phantom carries no shape to compare — including it would
@@ -451,7 +454,7 @@ export function compare(
       extraColumns += model.columns.length;
     } else {
       const isStub = stubModelKeys.has(modelKey);
-      const columns = compareColumns(model, targetModel, isStub, normaliseName);
+      const columns = compareColumns(model, targetModel, isStub, foldingFor(model.name));
       models.push({ name: model.name, status: 'matched', columns });
 
       for (const col of columns) {
@@ -481,7 +484,7 @@ export function compare(
     }
   }
 
-  const relationships = compareRelationships(source.relationships, target.relationships, normaliseName);
+  const relationships = compareRelationships(source.relationships, target.relationships, normaliseName, foldingFor);
 
   return {
     domain: source.domain,

@@ -9,6 +9,14 @@ import type { UnifiedDomain, Relationship, SemanticModel } from '../types/semant
 import { columnKey, modelKey, relationshipKey, deriveColumnAction, deriveRelationshipAction,
   resolveGroundTruthDataType } from '../types/syncPlan';
 import type { GroundTruth, ColumnResolution, RelationshipResolution } from '../types/syncPlan';
+import type { IdentifierFolding } from '../types/naming';
+import { findByIdentifier, logicalSpelling, sameIdentifier } from './identifierMatching';
+
+/** How each physical model folds identifier case; exact where the export does not say. */
+export function foldingByModel(physical: DisplayDomain): (modelName: string) => IdentifierFolding {
+  const map = new Map(physical.models.map(m => [m.name, m.identifierFolding ?? 'exact' as const]));
+  return name => map.get(name) ?? 'exact';
+}
 
 export interface SqlmeshSyncPlan {
   schemaVersion: 1;
@@ -128,40 +136,53 @@ export function buildSqlmeshSyncPlan(options: {
     modelContext, columns, relationships, preconditions, instructions: SQLMESH_SYNC_INSTRUCTIONS, deployment: 'separate-user-action' };
 }
 
-/** Returns a patch; the editor writes it through one comment-preserving WorkspaceEdit. */
+/**
+ * Returns a patch; the editor writes it through one comment-preserving WorkspaceEdit.
+ *
+ * Column names in the plan are the comparison's raw spellings — the export's
+ * when the physical stage was the source (`CUSTOMER_ID` on Snowflake). They are
+ * resolved against the logical design by each model's identifier folding, and
+ * anything written into the design takes its logical spelling.
+ */
 export function applySqlmeshLogicalPlan(plan: SqlmeshSyncPlan, domain: UnifiedDomain, physical: DisplayDomain): {
   models: SemanticModel[]; relationships: Relationship[];
 } {
   if (plan.direction !== 'metadata-to-logical') throw new Error('This plan requires assisted source edits.');
+  const foldingOf = foldingByModel(physical);
   const models = structuredClone(domain.logical.models);
   const changed = new Set<string>();
   let relationships = structuredClone(domain.logical.relationships);
   for (const c of plan.columns) {
     const m = models.find(m => m.name === c.modelName);
     if (!m) throw new Error(`Logical model ${c.modelName} is unavailable.`);
+    const folding = foldingOf(c.modelName);
     const cols = m.columns ?? (m.columns = []);
-    const existing = cols.find(col => col.name === c.columnName);
-    const source = physical.models.find(m => m.name === c.modelName)?.columns.find(col => col.name === c.columnName);
+    const existing = findByIdentifier(cols, c.columnName, folding);
+    const source = findByIdentifier(physical.models.find(m => m.name === c.modelName)?.columns ?? [], c.columnName, folding);
     if (c.action === 'add-column-to-logical') {
       if (!source || !c.resolvedDataType) throw new Error('Column metadata is unavailable.');
-      if (!existing) cols.push({ name: c.columnName, dataType: c.resolvedDataType, description: source.description });
+      if (!existing) cols.push({ name: logicalSpelling(source.name, folding), dataType: c.resolvedDataType, description: source.description });
     } else if (c.action === 'remove-column-from-logical') {
-      m.columns = cols.filter(col => col.name !== c.columnName);
-    } else if (c.action === 'update-type-in-logical' && existing && c.resolvedDataType) existing.dataType = c.resolvedDataType;
-    else throw new Error(`Unsupported logical action: ${c.action}`);
+      m.columns = cols.filter(col => !sameIdentifier(col.name, c.columnName, folding));
+    } else if (c.action === 'update-type-in-logical') {
+      if (!existing || !c.resolvedDataType) throw new Error(`Column ${c.modelName}.${c.columnName} is no longer in the logical design. Compare again.`);
+      existing.dataType = c.resolvedDataType;
+    } else throw new Error(`Unsupported logical action: ${c.action}`);
     changed.add(m.name);
   }
-  const same = (a: Relationship, b: RelationshipResolution) => a.fromModel === b.fromModel && a.fromColumn === b.fromColumn && a.toModel === b.toModel && a.toColumn === b.toColumn;
+  const same = (a: Relationship, b: RelationshipResolution) => a.fromModel === b.fromModel && a.toModel === b.toModel
+    && sameIdentifier(a.fromColumn, b.fromColumn, foldingOf(a.fromModel)) && sameIdentifier(a.toColumn, b.toColumn, foldingOf(a.toModel));
   for (const r of plan.relationships) {
     const existing = relationships.find(rel => same(rel, r));
     if (r.action === 'remove-relationship-from-logical') relationships = relationships.filter(rel => !same(rel, r));
     else if (r.action === 'add-relationship-to-logical' && r.resolvedCardinality) {
-      if (!existing) relationships.push({ fromModel: r.fromModel, fromColumn: r.fromColumn, toModel: r.toModel, toColumn: r.toColumn, cardinality: r.resolvedCardinality });
+      if (!existing) relationships.push({ fromModel: r.fromModel, fromColumn: logicalSpelling(r.fromColumn, foldingOf(r.fromModel)),
+        toModel: r.toModel, toColumn: logicalSpelling(r.toColumn, foldingOf(r.toModel)), cardinality: r.resolvedCardinality });
     } else if (r.action === 'update-cardinality-in-logical' && existing && r.resolvedCardinality) existing.cardinality = r.resolvedCardinality;
     else throw new Error(`Unsupported logical action: ${r.action}`);
   }
   for (const r of relationships) {
-    const has = (name: string, col: string) => models.find(m => m.name === name)?.columns?.some(c => c.name === col);
+    const has = (name: string, col: string) => !!findByIdentifier(models.find(m => m.name === name)?.columns ?? [], col, foldingOf(name));
     if (!has(r.fromModel, r.fromColumn) || !has(r.toModel, r.toColumn)) throw new Error('A selected column removal leaves a relationship without an endpoint. Select that relationship for removal too.');
   }
   return { models: models.filter(m => changed.has(m.name)), relationships };
