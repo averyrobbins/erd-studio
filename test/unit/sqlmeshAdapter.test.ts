@@ -8,7 +8,7 @@ import { DomainService } from '../../src/services/domainService';
 import { LayerService } from '../../src/services/layerService';
 import { LogicalModelService } from '../../src/services/logicalModelService';
 import { compare } from '../../src/services/discrepancyService';
-import { HarnessService, HARNESS_TARGETS } from '../../src/services/harnessService';
+import { HarnessService, HARNESS_TARGETS, HARNESS_VERSION, SQLMESH_HARNESS_VERSION, extractHarnessVersion } from '../../src/services/harnessService';
 
 const fixture = path.resolve(__dirname, '../fixtures/sqlmesh-project');
 let root: string;
@@ -147,6 +147,29 @@ describe('SQLMesh metadata adapter', () => {
       expect(content).not.toContain('dbt build');
       expect(content).toContain('schemaVersion');
     }
+  });
+  it('tells assistants the FK parent must be a declared dependency', () => {
+    const content = new HarnessService('.erd-studio', 'sqlmesh').generateContent('claude');
+    expect(content).toContain('depends_on (analytics.dim_customer)');
+    expect(content).toMatch(/builds its DAG from the query, not from audits/);
+  });
+  it('versions the SQLMesh harness independently of the dbt harness', () => {
+    // A SQLMesh-only content change must never prompt every dbt user to rewrite
+    // files that would come out byte-identical, so each provider carries and is
+    // compared against its own version.
+    const dbt = new HarnessService();
+    const mesh = new HarnessService('.erd-studio', 'sqlmesh');
+    expect(dbt.version).toBe(HARNESS_VERSION);
+    expect(mesh.version).toBe(SQLMESH_HARNESS_VERSION);
+    expect(extractHarnessVersion(dbt.generateContent('claude'))).toBe(HARNESS_VERSION);
+    expect(extractHarnessVersion(mesh.generateContent('claude'))).toBe(SQLMESH_HARNESS_VERSION);
+    const claude = HARNESS_TARGETS.find(t => t.id === 'claude')!;
+    mesh.install(root, claude);
+    expect(mesh.detectStale(root)).toHaveLength(0);
+    // An older SQLMesh install is stale for SQLMesh; the dbt version is irrelevant to it.
+    const file = path.join(root, claude.relativePath);
+    fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(`<!-- erd-studio-harness: ${SQLMESH_HARNESS_VERSION} -->`, '<!-- erd-studio-harness: 0 -->'));
+    expect(mesh.detectStale(root).map(t => t.id)).toEqual(['claude']);
   });
   it('offers harness replacement when switching providers at the same version', () => {
     const dbt = new HarnessService();

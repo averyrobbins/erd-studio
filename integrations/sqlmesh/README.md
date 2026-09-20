@@ -75,7 +75,15 @@ audits (
 )
 ```
 
-The audit allows null child keys and returns orphaned non-null keys. Unfiltered
+The audit allows null child keys and returns orphaned non-null keys. **The parent
+must be a dependency of the child.** SQLMesh derives its DAG from the query, not
+from audits, so a child that does not select from the parent needs an explicit
+`depends_on (analytics.dim_customer)` in its `MODEL` block. Without it the audit
+is rendered against the parent's virtual name: a fresh deployment fails with
+*table does not exist* because the child can run before the parent, and a dev
+environment checks prod's parent instead of its own. The exporter reports this
+case as a diagnostic (*"…is not a dependency of the model"*) and still exports
+the edge; fix the model, then refresh. Unfiltered
 `unique_values` audits establish single-column uniqueness for cardinality.
 `unique_combination_of_columns` is exported as grouped metadata; composite FK
 cardinality is deferred. These are **audit declarations**, not evidence of passing

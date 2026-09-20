@@ -19,8 +19,27 @@ import * as path from 'path';
 // Version marker — embedded in every generated harness file
 // ---------------------------------------------------------------------------
 
-/** Version of the harness content. Bump when SCHEMA_CONTENT or generators change. */
-export const HARNESS_VERSION = '19';
+/**
+ * Version of the dbt harness content. Bump when SCHEMA_CONTENT or the dbt
+ * generators change — and only then: every installed dbt harness whose marker
+ * differs is offered an update, so a bump for unrelated work prompts every
+ * dbt user to rewrite files that would come out byte-identical.
+ */
+export const HARNESS_VERSION = '17';
+
+/**
+ * Version of the native SQLMesh harness content, independent of
+ * {@link HARNESS_VERSION}. Bump when the SQLMesh branch of
+ * `generateDefaultContent`, the shared logical guide it embeds, or
+ * `SQLMESH_SYNC_INSTRUCTIONS` change. A file's provider marker decides which
+ * version it is compared against.
+ */
+export const SQLMESH_HARNESS_VERSION = '1';
+
+/** The harness version the given provider's generated files carry. */
+export function harnessVersionFor(provider: 'dbt' | 'sqlmesh'): string {
+  return provider === 'sqlmesh' ? SQLMESH_HARNESS_VERSION : HARNESS_VERSION;
+}
 
 const VERSION_MARKER_PREFIX = '<!-- erd-studio-harness:';
 const VERSION_MARKER_SUFFIX = ' -->';
@@ -37,8 +56,8 @@ export const CODEX_REGION_END = '<!-- END erd-studio-harness -->';
 /** Heading of the Codex section — used to recognise pre-region installs. */
 const CODEX_SECTION_HEADING = '## ERD Studio Domain Files';
 
-function buildVersionMarker(): string {
-  return `${VERSION_MARKER_PREFIX} ${HARNESS_VERSION}${VERSION_MARKER_SUFFIX}`;
+function buildVersionMarker(version: string = HARNESS_VERSION): string {
+  return `${VERSION_MARKER_PREFIX} ${version}${VERSION_MARKER_SUFFIX}`;
 }
 
 /**
@@ -748,6 +767,11 @@ export class HarnessService {
    */
   constructor(private readonly semanticDir: string = DEFAULT_SEMANTIC_DIR, private readonly provider: 'dbt' | 'sqlmesh' = 'dbt') {}
 
+  /** The version this service's generated files carry — see {@link harnessVersionFor}. */
+  get version(): string {
+    return harnessVersionFor(this.provider);
+  }
+
   /**
    * Generate the config file content for a given harness target.
    */
@@ -774,7 +798,10 @@ After changing a binding or renaming a bound logical model, refresh the export.
 Preserve qualified model identities and the case of exported column names.
 
 Only the erd_relationship(column := customer_id, to := analytics.dim_customer,
-field := customer_id) audit convention supplies FK edges in this draft. Unfiltered
+field := customer_id) audit convention supplies FK edges in this draft. The parent
+must be a dependency of the child: add depends_on (analytics.dim_customer) to a
+child MODEL whose query does not select from the parent, or the audit runs before
+the parent exists and a fresh deployment fails. Unfiltered
 unique_values / unique_combination_of_columns supply uniqueness metadata.
 Lineage, grain and references are not enforced foreign keys.
 
@@ -785,7 +812,7 @@ ${SQLMESH_SYNC_INSTRUCTIONS.map((instruction, i) => `${i + 1}. ${instruction}`).
 
 Never apply a plan as part of viewing or refreshing a diagram.
 
-${buildVersionMarker()}
+${buildVersionMarker(SQLMESH_HARNESS_VERSION)}
 <!-- erd-studio-provider: sqlmesh -->
 `;
       if (targetId === 'codex') return `${CODEX_REGION_BEGIN}\n${CODEX_SECTION_HEADING}\n${content}\n${CODEX_REGION_END}\n`;
@@ -994,8 +1021,11 @@ ${buildVersionMarker()}
         // Unmanaged file — leave it alone.
         continue;
       }
+      // A file is compared against the version of the provider it was generated
+      // for, so a SQLMesh-only content change never marks a dbt install stale
+      // (and vice versa); a provider switch is always stale.
       const installedProvider = content.includes('<!-- erd-studio-provider: sqlmesh -->') ? 'sqlmesh' : 'dbt';
-      if (version !== HARNESS_VERSION || installedProvider !== this.provider) {
+      if (installedProvider !== this.provider || version !== this.version) {
         stale.push(target);
       }
     }

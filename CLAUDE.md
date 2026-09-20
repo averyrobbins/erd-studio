@@ -241,9 +241,10 @@ AI coding harness files (installed via `erdStudio.installCodingHarness`) embed a
 
 | Export | Purpose |
 |--------|---------|
-| `HARNESS_VERSION` | Current version string — bump when `SCHEMA_CONTENT` or generators change |
+| `HARNESS_VERSION` | Current **dbt** harness version — bump when `SCHEMA_CONTENT` or the dbt generators change |
+| `SQLMESH_HARNESS_VERSION` | Current **SQLMesh** harness version, independent of the dbt one — bump when the SQLMesh branch of `generateDefaultContent`, the logical guide it embeds, or `SQLMESH_SYNC_INSTRUCTIONS` (`sqlmeshSync.ts`) change. `HarnessService.version` / `harnessVersionFor(provider)` pick the right one; generated SQLMesh files also carry `<!-- erd-studio-provider: sqlmesh -->` |
 | `extractHarnessVersion(content)` | Parses version from file content, returns `null` if no marker |
-| `detectStale(workspaceRoot)` | Returns installed `HarnessTarget[]` whose embedded version ≠ `HARNESS_VERSION`. Files with **no** marker are unmanaged (hand-written) and are never reported |
+| `detectStale(workspaceRoot)` | Returns installed `HarnessTarget[]` whose provider marker ≠ the service's provider, or whose embedded version ≠ that provider's version. Files with **no** marker are unmanaged (hand-written) and are never reported |
 | `CODEX_REGION_BEGIN` / `CODEX_REGION_END` | `<!-- BEGIN/END erd-studio-harness -->` markers wrapping the ERD section in `AGENTS.md`; updates replace only this region |
 | `findCodexRegion(content)` / `mergeCodexContent(existing, generated)` | Locate / splice the managed `AGENTS.md` region (falls back to heading…version-marker for pre-v16 installs, appends when absent) |
 
@@ -251,7 +252,7 @@ Generated paths honour `erdStudio.semanticDir` (SKILL/SYNC content, the Claude P
 
 **Activation flow** (`src/extension.ts`): on startup, `detectStale()` runs. If stale targets are found, a warning notification offers "Update All" (updates immediately), "Choose…" (opens the install QuickPick with outdated targets pre-selected), or "Dismiss". Nothing is ever overwritten silently, unmanaged files are never flagged, and `AGENTS.md` content outside the BEGIN/END region is always preserved. When no harness files exist at all, the install QuickPick is offered once per workspace (tracked in `workspaceState`). The QuickPick labels existing unmanaged files honestly ("will be replaced" / "section will be appended").
 
-**When to bump `HARNESS_VERSION`:** any change to `SCHEMA_CONTENT`, the generator functions, or naming conventions that would make previously installed harness files incorrect. Do **not** bump for unrelated extension changes — the version is independent of `package.json` version.
+**When to bump `HARNESS_VERSION`:** any change to `SCHEMA_CONTENT`, the dbt generator functions, or naming conventions that would make previously installed dbt harness files incorrect. Do **not** bump for unrelated extension changes — the version is independent of `package.json` version — and do **not** bump it for SQLMesh-only content: that is what `SQLMESH_HARNESS_VERSION` is for, so a SQLMesh change never asks every dbt user to rewrite byte-identical files.
 
 ## Developer Testing in VS Code
 

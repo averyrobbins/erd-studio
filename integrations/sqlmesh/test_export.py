@@ -96,6 +96,32 @@ SELECT 1::INT AS id, 2::INT AS "id";
         self.assertEqual([c["name"] for c in model["columns"]], ["ID", "id"])
         self.assertEqual(model["uniqueKeys"], [["ID"], ["id"]])
 
+    def test_fk_target_missing_from_dependencies_is_diagnosed_but_still_exported(self):
+        # SQLMesh builds the DAG from the query, not from audits: a parent that the
+        # child never selects from must be declared with depends_on, or the audit
+        # runs before the parent exists. The edge is declared intent and is kept.
+        (self.root / "models/fct_return.sql").write_text(
+            "MODEL (name analytics.fct_return, kind FULL,"
+            " audits (erd_relationship(column := customer_id, to := analytics.dim_customer, field := customer_id)));"
+            " SELECT 7::INT AS return_id, 1::INT AS customer_id;")
+        result = self.export()
+        edge = next(r for r in result["relationships"] if r["fromId"].endswith('."fct_return"'))
+        self.assertTrue(edge["toId"].endswith('."dim_customer"'))
+        warnings = [d for d in result["diagnostics"] if "not a dependency" in d]
+        self.assertEqual(len(warnings), 1, result["diagnostics"])
+        self.assertIn('"fct_return"', warnings[0])
+        self.assertIn("depends_on (analytics.dim_customer)", warnings[0])
+        # The fixture's fct_order selects from dim_customer, so it stays clean.
+        self.assertFalse(any('"fct_order"' in d for d in warnings))
+        # Declaring the dependency clears the diagnostic without changing the edge.
+        (self.root / "models/fct_return.sql").write_text(
+            "MODEL (name analytics.fct_return, kind FULL, depends_on (analytics.dim_customer),"
+            " audits (erd_relationship(column := customer_id, to := analytics.dim_customer, field := customer_id)));"
+            " SELECT 7::INT AS return_id, 1::INT AS customer_id;")
+        result = self.export()
+        self.assertFalse(any("not a dependency" in d for d in result["diagnostics"]))
+        self.assertTrue(any(r["fromId"].endswith('."fct_return"') for r in result["relationships"]))
+
     def test_unavailable_audit_endpoints_produce_diagnostics(self):
         file = self.root / "models/fct_order.sql"
         file.write_text(file.read_text().replace("field := customer_id", "field := unavailable"))

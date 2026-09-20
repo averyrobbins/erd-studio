@@ -206,6 +206,15 @@ def export_project(root: Path, semantic: Path, gateway: str | None, config: str 
                                                   "toId": target,
                                                   "toColumn": normalize_identifiers(parent.copy(), dialect=model.dialect).name,
                                                   "audit": audit_name})
+                            # SQLMesh builds the DAG from the query, not from audits. An audit whose
+                            # parent is not a dependency is rendered against the parent's virtual
+                            # name and can run before that table exists (a fresh deployment fails)
+                            # or against prod's view from a dev environment. The edge is still the
+                            # declared intent; the deployment hazard is reported alongside it.
+                            if target not in model.depends_on:
+                                diagnostics.append(f"erd_relationship on {model_id} targets {target}, which is not a dependency of the model; "
+                                                   f"add depends_on ({to.sql(dialect=model.dialect)}) to the MODEL so the audit resolves "
+                                                   "to the environment's own table and runs after it exists")
                         else:
                             diagnostics.append(f"Unresolved relationship target {target} on {model_id}")
                     else:

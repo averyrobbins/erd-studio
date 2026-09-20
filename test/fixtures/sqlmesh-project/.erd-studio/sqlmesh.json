@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "provider": "sqlmesh",
-  "generatedAt": "2026-09-20T19:25:23.000955+00:00",
+  "generatedAt": "2026-09-20T22:21:28.610626+00:00",
   "sqlmeshVersion": "0.236.1",
   "gateway": null,
   "config": null,
@@ -189,7 +189,7 @@
   ],
   "inputs": {
     ".erd-studio/sqlmesh-bindings.json": "d62460667f6917ed69e5a8fa45c9db7e1dd30174532815ea449566474facf055",
-    "audits/erd_relationship.sql": "e4055e20fc0aafda733dd33ffc40aecb2af5b282250bd386aa2da2d5a2e12486",
+    "audits/erd_relationship.sql": "ab59f8d34fbe97b8938a52216a841078bb84a40dd51741c249653020524641e0",
     "config.yaml": "44e6c47b205e7b85c2199e25d92a42b405967b2091c3c76e6b97c8d1f75f9803",
     "external_models.yaml": "dfb19975694a4736b34c516397e9998d004dee7078bc533e2fab0322a446571e",
     "models/dim_customer.sql": "85c345359940e624cf89d55c1127d769f8b1f84ca92d66758667daa5592d0103",
@@ -200,5 +200,6 @@
     "models/seed.sql": "9fbfb86cbb670a104e7702129012794e5e556cb4b1f54187b4e1b28fa3a21296",
     "seeds/items.csv": "eee7f302b58ae4c9cdb964a03fb1a138e64e2f15006b67fc5155b121de7cd4aa"
   },
-  "diagnostics": []
+  "diagnostics": [],
+  "warehouse": null
 }

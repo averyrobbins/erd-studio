@@ -12,7 +12,7 @@ import { SemanticEditorProvider } from './providers/SemanticEditorProvider';
 import { SemanticFileDecorationProvider } from './providers/SemanticFileDecorationProvider';
 import { LayerDecorationProvider } from './providers/LayerDecorationProvider';
 import { FileWatcherService } from './watchers/FileWatcherService';
-import { HarnessService, HARNESS_TARGETS, HARNESS_VERSION, extractHarnessVersion } from './services/harnessService';
+import { HarnessService, HARNESS_TARGETS, extractHarnessVersion } from './services/harnessService';
 import { SelectorsService } from './services/selectorsService';
 import { LegacyTagCleanupService } from './services/legacyTagCleanupService';
 import { LogicalModelService } from './services/logicalModelService';
@@ -1562,7 +1562,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               // unreadable — treat as unmanaged
             }
             description = managed
-              ? '$(check) installed (v' + HARNESS_VERSION + ')'
+              ? '$(check) installed (v' + harnessService.version + ')'
               : target.id === 'codex'
                 ? '$(info) existing AGENTS.md — ERD Studio section will be appended'
                 : '$(warning) existing file not managed by ERD Studio — will be replaced';
@@ -1623,7 +1623,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (staleTargets.length > 0) {
       const names = staleTargets.map(t => t.label.replace(/\$\([^)]+\)\s*/g, '')).join(', ');
       void vscode.window.showWarningMessage(
-        `ERD Studio: ${staleTargets.length} AI coding harness file(s) outdated (${names}). Update to v${HARNESS_VERSION}?`,
+        `ERD Studio: ${staleTargets.length} AI coding harness file(s) outdated (${names}). Update to v${harnessService.version}?`,
         'Update All',
         'Choose…',
         'Dismiss',
@@ -1638,7 +1638,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             );
           } else {
             void vscode.window.showInformationMessage(
-              `ERD Studio: Updated ${results.length} AI coding harness file(s) to v${HARNESS_VERSION} (${names}).`,
+              `ERD Studio: Updated ${results.length} AI coding harness file(s) to v${harnessService.version} (${names}).`,
             );
           }
         } else if (choice === 'Choose…') {
