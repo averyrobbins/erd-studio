@@ -23,6 +23,18 @@ heading — `## Unreleased — 1.0.0` — and the workflow releases exactly that
   stage selection in the sync modal. Domain execution and remote warehouses remain
   deferred. See the
   [SQLMesh setup guide](integrations/sqlmesh/README.md).
+- **SQLMesh preview hardening (review follow-ups):** activation stays limited to
+  `dbt_project.yml` and `.erd-studio/` files (a generic `config.yaml`/`config.py` no
+  longer activates the extension in unrelated workspaces); a failed Physical switch
+  can no longer leave the logical canvas read-only; logical column names match a
+  dialect's folded identifiers (`customer_id` ≡ Snowflake's `CUSTOMER_ID`); the
+  `erd_relationship` audit convention documents and the exporter diagnoses a parent
+  missing from `depends_on`; an unknown environment is reported instead of shown
+  as "not deployed"; the export carries an integrity hash and is refused when
+  edited by hand; `erdStudio.sqlmesh.exportTimeoutSeconds` (default 600) and a
+  cancellable progress replace the fixed 120 s limit; the Physical notice can be
+  dismissed; the SQLMesh harness is versioned separately so dbt harness files are
+  not asked to update for byte-identical content.
 
 ## 1.0.5 — 2026-09-20
 
