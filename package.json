@@ -48,9 +48,7 @@
   ],
   "activationEvents": [
     "workspaceContains:**/dbt_project.yml",
-    "workspaceContains:**/config.yaml",
-    "workspaceContains:**/config.yml",
-    "workspaceContains:**/config.py",
+    "workspaceContains:**/.erd-studio/layers.json",
     "workspaceContains:**/.erd-studio/sqlmesh.json"
   ],
   "main": "./dist/extension.js",

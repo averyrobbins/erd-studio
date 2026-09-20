@@ -17,7 +17,11 @@ Alternatively, use the source workflow below.
 2. In that new window, open your SQLMesh project (or this repository's
    `test/fixtures/sqlmesh-project`). Native `config.yaml`, `config.yml`, or
    `config.py` is detected without a dummy dbt file. For mixed projects, set
-   `erdStudio.provider` to `sqlmesh`; automatic detection prefers dbt.
+   `erdStudio.provider` to `sqlmesh`; automatic detection prefers dbt. The
+   extension activates on its own once the workspace has a `dbt_project.yml`
+   or an `.erd-studio/` directory (`layers.json` or `sqlmesh.json`); for a
+   brand-new SQLMesh project, open the ERD Studio sidebar or run any
+   **ERD Studio:** command once and detection takes over from there.
 3. Use your project's Python environment with SQLMesh installed. Set
    **User Settings → `erdStudio.sqlmesh.pythonPath`** to its Python executable.
    Otherwise the extension tries project `.venv`, then `python3` (`python` on

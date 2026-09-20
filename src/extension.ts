@@ -48,85 +48,10 @@ const LAST_ACTIVATED_VERSION_KEY = 'lastActivatedVersion';
  */
 const HARNESS_INSTALL_PROMPTED_KEY = 'erdStudio.harnessInstallPrompted';
 
-/** Directories never descended into when searching for a nested dbt project. */
-const DBT_SEARCH_SKIP_DIRS = new Set(['node_modules', 'dbt_packages', '.git', 'target', '.venv', 'venv']);
-
-/** Maximum directory depth (below a workspace folder) searched for dbt_project.yml. */
-const DBT_SEARCH_MAX_DEPTH = 3;
-
-function hasDbtProjectFile(dir: string): boolean {
-  try {
-    return fs.statSync(path.join(dir, 'dbt_project.yml')).isFile();
-  } catch {
-    return false;
-  }
-}
-
 /**
- * Resolve the dbt project root from a list of workspace folder paths and the
- * `erdStudio.projectPath` setting. Pure (no vscode access) so it is unit-testable.
- *
- * Resolution order:
- *   1. `projectPath` setting — absolute, or relative to each workspace folder —
- *      when it contains dbt_project.yml.
- *   2. A workspace folder whose root contains dbt_project.yml.
- *   3. A depth-limited breadth-first search below each workspace folder
- *      (skipping node_modules, dbt_packages, .git, target, .venv), returning
- *      the shallowest match. Matches the recursive `workspaceContains`
- *      activation event so activation never lands on "no project found"
- *      for a monorepo with dbt in a subfolder.
- */
-export function resolveDbtProjectRoot(
-  folderPaths: readonly string[],
-  projectPathSetting: string,
-): string | undefined {
-  const configured = projectPathSetting.trim();
-  if (configured) {
-    if (path.isAbsolute(configured)) {
-      if (hasDbtProjectFile(configured)) { return configured; }
-    } else {
-      for (const folder of folderPaths) {
-        const candidate = path.resolve(folder, configured);
-        if (hasDbtProjectFile(candidate)) { return candidate; }
-      }
-    }
-    console.warn(`ERD Studio: erdStudio.projectPath "${configured}" does not contain dbt_project.yml — falling back to auto-detection.`);
-  }
-
-  for (const folder of folderPaths) {
-    if (hasDbtProjectFile(folder)) { return folder; }
-  }
-
-  // Breadth-first so the shallowest match wins.
-  let frontier = [...folderPaths];
-  for (let depth = 1; depth <= DBT_SEARCH_MAX_DEPTH && frontier.length > 0; depth++) {
-    const next: string[] = [];
-    for (const dir of frontier) {
-      let entries: fs.Dirent[];
-      try {
-        entries = fs.readdirSync(dir, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      entries.sort((a, b) => a.name.localeCompare(b.name));
-      for (const entry of entries) {
-        if (!entry.isDirectory() || DBT_SEARCH_SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) {
-          continue;
-        }
-        const child = path.join(dir, entry.name);
-        if (hasDbtProjectFile(child)) { return child; }
-        next.push(child);
-      }
-    }
-    frontier = next;
-  }
-
-  return undefined;
-}
-
-/**
- * Find the dbt project root: honours `erdStudio.projectPath`, then workspace
- * folder roots, then a shallow recursive search. See `resolveDbtProjectRoot`.
+ * Find the project root: honours `erdStudio.projectPath`, then workspace
+ * folder roots, then a shallow recursive search. See `resolveProjectRoot` in
+ * `services/projectDetection.ts` — pure, so its search rules are unit-tested.
  */
 function findDbtProjectRoot(): string | undefined {
   const workspaceFolders = vscode.workspace.workspaceFolders;
