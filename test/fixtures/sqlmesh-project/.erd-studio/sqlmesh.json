@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "provider": "sqlmesh",
-  "generatedAt": "2026-09-20T22:31:27.302241+00:00",
+  "generatedAt": "2026-09-20T22:39:25.375571+00:00",
   "sqlmeshVersion": "0.236.1",
   "gateway": null,
   "config": null,
@@ -168,7 +168,7 @@
       "id": "\"memory\".\"support\".\"dim_customer\"",
       "name": "support_dim_customer_e9041c3a1a",
       "schema": "support",
-      "description": "",
+      "description": "Kundenstamm f\u00fcr Support \u2014 UTF-8 \u2713 \ud83d\ude00",
       "dialect": "duckdb",
       "kind": "VIEW",
       "sourcePath": "models/other_customer.sql",
@@ -202,11 +202,12 @@
     "models/dim_customer.sql": "85c345359940e624cf89d55c1127d769f8b1f84ca92d66758667daa5592d0103",
     "models/disabled.sql": "d8e191d495478791a8651a57a6ba503d50c45765fbb95380f727f15dc28ffe1e",
     "models/fct_order.sql": "b10ba8e8ca5fb7ac861f8db458144323104e66ca709c8f5b5af2d075487053cc",
-    "models/other_customer.sql": "082f4220a29205c12467cfb338431335f9692be301495ef7094fa86c3159e10a",
+    "models/other_customer.sql": "fcda41c7425455d7ae1ec89458fec07620366516bb0959037e2d6c6c64ded8c7",
     "models/python_models.py": "d0e643b345abced04816e0b920853863fe17a0c68b92331b4fe60c7ba814359d",
     "models/seed.sql": "9fbfb86cbb670a104e7702129012794e5e556cb4b1f54187b4e1b28fa3a21296",
     "seeds/items.csv": "eee7f302b58ae4c9cdb964a03fb1a138e64e2f15006b67fc5155b121de7cd4aa"
   },
   "diagnostics": [],
-  "warehouse": null
+  "warehouse": null,
+  "integrity": "sha256:bec92ba09acf264d94c45bd84cdf0026fc857cdda44a904b684ec08a1c4185a9"
 }

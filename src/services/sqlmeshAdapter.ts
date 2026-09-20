@@ -18,8 +18,45 @@ const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every(x => typeof x === 'string');
 const relative = (p: string) => !!p && !path.isAbsolute(p) && !p.includes('\\') && !p.split('/').includes('..') && !p.includes('\0');
 
+/**
+ * The byte-stable form both the exporter and the editor hash: sorted keys, no
+ * whitespace, every character outside printable ASCII as a lowercase `\uXXXX`
+ * escape (per UTF-16 code unit, which is what Python's `ensure_ascii` emits for
+ * astral characters too). Mirror of `canonical_json` in
+ * `integrations/sqlmesh/export.py`; the two must stay byte-identical.
+ */
+export function canonicalJson(value: unknown): string {
+  // Python's sort_keys orders by code point; a plain JS sort orders by UTF-16
+  // code unit, which differs once an astral character meets U+E000–U+FFFF.
+  const byCodePoint = (a: string, b: string): number => {
+    const x = [...a], y = [...b];
+    for (let i = 0; i < Math.min(x.length, y.length); i++) {
+      const d = x[i].codePointAt(0)! - y[i].codePointAt(0)!;
+      if (d) return d;
+    }
+    return x.length - y.length;
+  };
+  const sorted = (v: unknown): unknown => Array.isArray(v) ? v.map(sorted)
+    : object(v) ? Object.fromEntries(Object.keys(v).sort(byCodePoint).map(k => [k, sorted(v[k])])) : v;
+  return JSON.stringify(sorted(value)).replace(/[\u007f-\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+}
+
+/** `sha256:<hex>` of everything in the snapshot but `integrity`, as the exporter stamps it. */
+export function snapshotIntegrity(snapshot: Record<string, unknown>): string {
+  const { integrity: _ignored, ...body } = snapshot;
+  return 'sha256:' + createHash('sha256').update(canonicalJson(body), 'ascii').digest('hex');
+}
+
 export function parseSqlmeshSnapshot(raw: string): SqlmeshSnapshot {
   const s: unknown = JSON.parse(raw);
+  // Verified before anything else: a tampered artifact must be refused even if
+  // the edit happens to be well-formed. Exports from before the stamp existed
+  // carry no `integrity` and are accepted as they always were.
+  if (object(s) && s.integrity !== undefined) {
+    if (typeof s.integrity !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(s.integrity) || s.integrity !== snapshotIntegrity(s)) {
+      throw new Error('SQLMesh metadata was modified after export (integrity check failed). Do not edit sqlmesh.json; run Refresh Project Metadata.');
+    }
+  }
   if (!object(s) || ![1, 2].includes(s.schemaVersion as number) || s.provider !== 'sqlmesh'
     || typeof s.generatedAt !== 'string' || !Number.isFinite(Date.parse(s.generatedAt))
     || typeof s.sqlmeshVersion !== 'string' || ![null, 'string'].includes(s.gateway === null ? null : typeof s.gateway)

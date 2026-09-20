@@ -9,7 +9,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { SqlmeshProjectAdapter } from '../../src/services/sqlmeshAdapter';
+import { SqlmeshProjectAdapter, snapshotIntegrity } from '../../src/services/sqlmeshAdapter';
 import { applySqlmeshLogicalPlan, buildSqlmeshSyncPlan, captureSqlmeshInputs } from '../../src/services/sqlmeshSync';
 import { DomainService } from '../../src/services/domainService';
 import { LayerService } from '../../src/services/layerService';
@@ -37,6 +37,7 @@ function makeSnowflake(edit?: (s: any) => void) {
   }
   for (const r of s.relationships) { r.fromColumn = r.fromColumn.toUpperCase(); r.toColumn = r.toColumn.toUpperCase(); }
   edit?.(s);
+  s.integrity = snapshotIntegrity(s);
   fs.writeFileSync(file, JSON.stringify(s));
   adapter.invalidate();
 }

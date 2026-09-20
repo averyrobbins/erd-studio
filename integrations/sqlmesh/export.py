@@ -42,6 +42,21 @@ class InspectionUnavailable(ValueError):
     """A credential-free reason suitable for a saved diagnostic."""
 
 
+def canonical_json(value) -> str:
+    """The byte-stable form both the exporter and the editor hash: sorted keys, no
+    whitespace, every non-printable or non-ASCII character as a lowercase backslash-u
+    escape (per UTF-16 code unit). Mirror of `canonicalJson` in src/services/sqlmeshAdapter.ts;
+    the two must stay byte-identical."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def with_integrity(snapshot: dict) -> dict:
+    """Stamp the export with a hash of its own content, so an artifact edited by hand
+    (the README says not to) is refused as `invalid` instead of trusted as `ready`."""
+    body = {k: v for k, v in snapshot.items() if k != "integrity"}
+    return {**body, "integrity": "sha256:" + hashlib.sha256(canonical_json(body).encode("ascii")).hexdigest()}
+
+
 def identifier_folding(dialect: str) -> str:
     """How the dialect folds unquoted identifiers: the key ERD Studio matches logical names by.
 
@@ -279,10 +294,11 @@ def export_project(root: Path, semantic: Path, gateway: str | None, config: str 
         after = hashes(root, semantic)
         if before != after:
             raise ValueError("Project changed during export; retry refresh")
-        return {"schemaVersion": 2, "provider": "sqlmesh", "generatedAt": datetime.now(timezone.utc).isoformat(),
-                "sqlmeshVersion": importlib.metadata.version("sqlmesh"), "gateway": gateway, "config": config,
-                "models": models, "relationships": valid_relationships, "inputs": after, "diagnostics": diagnostics,
-                "warehouse": warehouse}
+        return with_integrity({
+            "schemaVersion": 2, "provider": "sqlmesh", "generatedAt": datetime.now(timezone.utc).isoformat(),
+            "sqlmeshVersion": importlib.metadata.version("sqlmesh"), "gateway": gateway, "config": config,
+            "models": models, "relationships": valid_relationships, "inputs": after, "diagnostics": diagnostics,
+            "warehouse": warehouse})
     finally:
         context.close()
         # Context.close() does not close adapters when no evaluator was created.

@@ -52,6 +52,8 @@ export interface SqlmeshSnapshot {
   /** Relative paths and hashes; used to detect edits AND deleted input files. */
   inputs: Record<string, string>;
   warehouse?: WarehouseObservation | null;
+  /** `sha256:<hex>` over the canonical JSON of every other field; absent in exports older than the stamp. */
+  integrity?: string;
 }
 
 export interface WarehouseModelObservation {

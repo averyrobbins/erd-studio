@@ -112,6 +112,7 @@ it('refuses a shared-column removal that would break another domain relationship
   const artifact = path.join(root, '.erd-studio/sqlmesh.json');
   const snapshot = JSON.parse(fs.readFileSync(artifact, 'utf8'));
   snapshot.models.find((m: any) => m.name === 'fct_order').columns = snapshot.models.find((m: any) => m.name === 'fct_order').columns.filter((c: any) => c.name !== 'amount');
+  delete snapshot.integrity; // as an exporter from before the stamp would have written it
   fs.writeFileSync(artifact, JSON.stringify(snapshot));
   const other = JSON.parse(fs.readFileSync(path.join(root, '.erd-studio/silver/orders.json'), 'utf8'));
   other.domain = 'other';

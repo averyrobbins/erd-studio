@@ -49,6 +49,17 @@ class ExportTest(unittest.TestCase):
         self.assertEqual(len(models), len({m["id"] for m in models.values()}))
         self.assertEqual(models["dim_customer"]["sourcePath"], "models/dim_customer.sql")
 
+    def test_export_is_stamped_with_a_verifiable_integrity_hash(self):
+        result = self.export()
+        self.assertRegex(result["integrity"], r"^sha256:[a-f0-9]{64}$")
+        self.assertEqual(exporter.with_integrity(result)["integrity"], result["integrity"])
+        tampered = json.loads(json.dumps(result))
+        tampered["models"][0]["columns"].append({"name": "invented", "dataType": "INT", "description": ""})
+        self.assertNotEqual(exporter.with_integrity(tampered)["integrity"], result["integrity"])
+        # Canonical form: sorted keys, no whitespace, ASCII-only escapes — see canonicalJson in the editor.
+        self.assertEqual(exporter.canonical_json({"b": "\u00e9\U0001f600\x7f", "a": [1, None, True]}),
+                         '{"a":[1,null,true],"b":"\\u00e9\\ud83d\\ude00\\u007f"}')
+
     def test_aliases_survive_added_models_and_explicit_bindings(self):
         old = {m["id"]: m["name"] for m in self.export()["models"]}
         (self.root / "models/new.sql").write_text("MODEL (name elsewhere.dim_customer); SELECT 2::INT AS id")

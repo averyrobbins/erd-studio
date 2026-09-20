@@ -54,7 +54,9 @@ For command-line export, use absolute paths:
 
 `--semantic-dir docs/erd`, `--gateway local`, and `--config config_test` are optional.
 The VSIX bundles this script as `dist/sqlmesh_export.py`; it does not bundle Python
-or SQLMesh. Do not edit the generated JSON.
+or SQLMesh. Do not edit the generated JSON: it carries an `integrity` hash of its own
+content, and an edited file is refused as invalid (the last good export is kept) until
+you refresh. Exports written before the hash existed are still read.
 
 ## Model identity and relationships
 
@@ -182,8 +184,9 @@ No sync operation runs SQLMesh `plan`, `apply`, `run`, migrations or warehouse D
   bindings and logical files. Environment variables, imported Python elsewhere,
   custom loaders, remote resources and subsequent warehouse changes require manual
   refresh. Observation timestamps indicate when metadata was read, not a live check.
-- Readers accept export schemas 1 and 2; the exporter writes 2. Sync plans use their
-  own version 1 native contract. Credentials/config values/query bodies are not
+- Readers accept export schemas 1 and 2; the exporter writes 2 with an `integrity`
+  stamp and per-model `identifierFolding`. Sync plans use their own version 1 native
+  contract. Credentials/config values/query bodies are not
   serialized. Names and descriptions remain project data; review before sharing.
 - Verified on Linux/Python 3.13 with SQLMesh **0.236.1**, SQLGlot **30.8.0**, DuckDB
   **1.5.5**. Other versions/platforms and production scale remain unverified.

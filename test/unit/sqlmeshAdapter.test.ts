@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { SqlmeshProjectAdapter, parseSqlmeshSnapshot } from '../../src/services/sqlmeshAdapter';
+import { SqlmeshProjectAdapter, parseSqlmeshSnapshot, snapshotIntegrity, canonicalJson } from '../../src/services/sqlmeshAdapter';
 import { detectProjectProvider, resolveProjectRoot } from '../../src/services/projectDetection';
 import { DomainService } from '../../src/services/domainService';
 import { LayerService } from '../../src/services/layerService';
@@ -24,8 +24,10 @@ function domain() {
   service.setLogicalModelService(new LogicalModelService(root));
   return service.getDomain(path.join(root, '.erd-studio/silver/orders.json'));
 }
+/** Rewrite the export as a different exporter run would have written it (re-stamped). */
 function editArtifact(fn: (s: any) => void) {
   const s = JSON.parse(fs.readFileSync(adapter.artifactPath, 'utf8')); fn(s);
+  s.integrity = snapshotIntegrity(s);
   fs.writeFileSync(adapter.artifactPath, JSON.stringify(s)); adapter.invalidate();
 }
 
@@ -69,8 +71,39 @@ describe('SQLMesh metadata adapter', () => {
     expect(order.provenance?.types).toBe('sqlmesh-inferred');
     expect(physical.relationships).toHaveLength(1);
   });
+  it('refuses an export edited by hand but still reads one written before the stamp existed', async () => {
+    // The checked-in fixture is stamped by the real exporter; the editor's
+    // canonical form must agree byte-for-byte (it holds non-ASCII text).
+    const original = JSON.parse(fs.readFileSync(adapter.artifactPath, 'utf8'));
+    expect(original.integrity).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(snapshotIntegrity(original)).toBe(original.integrity);
+    expect(canonicalJson({ b: 'é😀\u007f', a: [1, null, true] })).toBe('{"a":[1,null,true],"b":"\\u00e9\\ud83d\\ude00\\u007f"}');
+    // Keys sort by code point as Python's sort_keys does, not by UTF-16 code unit.
+    expect(canonicalJson({ '\uE000': 1, '😀': 2, z: 3 })).toBe('{"z":3,"\\ue000":1,"\\ud83d\\ude00":2}');
+    await adapter.load();
+    expect(adapter.status).toBe('ready');
+
+    const tampered = structuredClone(original);
+    tampered.models.find((m: any) => m.name === 'fct_order').columns.pop();
+    fs.writeFileSync(adapter.artifactPath, JSON.stringify(tampered)); adapter.invalidate();
+    await adapter.load();
+    expect(adapter.status).toBe('stale');
+    expect(adapter.diagnostics[0]).toContain('integrity check failed');
+    expect((await adapter.load()).manifest.models.get('fct_order')?.columns).toHaveLength(3);
+
+    const legacy = structuredClone(tampered); delete legacy.integrity;
+    fs.writeFileSync(adapter.artifactPath, JSON.stringify(legacy)); adapter.invalidate();
+    await adapter.load();
+    expect(adapter.status).toBe('ready');
+    expect((await adapter.load()).manifest.models.get('fct_order')?.columns).toHaveLength(2);
+
+    for (const bad of ['sha256:abc', 42, 'md5:' + 'a'.repeat(64)]) {
+      expect(() => parseSqlmeshSnapshot(JSON.stringify({ ...original, integrity: bad }))).toThrow('integrity');
+    }
+  });
   it('rejects incomplete and malformed warehouse evidence', () => {
     const s = JSON.parse(fs.readFileSync(adapter.artifactPath, 'utf8'));
+    delete s.integrity;
     s.schemaVersion = 2;
     s.warehouse = { environment: 'dev', observedAt: '2026-09-20T12:00:00Z', models: [] };
     expect(() => parseSqlmeshSnapshot(JSON.stringify(s))).toThrow('Incomplete');
@@ -144,6 +177,7 @@ describe('SQLMesh metadata adapter', () => {
   });
   it('rejects unsafe aliases, paths, duplicate IDs, invalid edges and future schema versions', () => {
     const original = JSON.parse(fs.readFileSync(adapter.artifactPath, 'utf8'));
+    delete original.integrity;
     for (const mutate of [
       (s: any) => { s.models[0].name = '../bad'; },
       (s: any) => { s.models[0].sourcePath = '/etc/passwd'; },
