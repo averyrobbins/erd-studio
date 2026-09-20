@@ -13,6 +13,13 @@ import { TemplateService } from '../../src/services/templateService';
 import { SelectorsService } from '../../src/services/selectorsService';
 import { SqlmeshProjectAdapter } from '../../src/services/sqlmeshAdapter';
 
+// The launch resolves `claude` on PATH; CI has no Claude Code, so the lookup is
+// stubbed while the environment assembly stays real.
+vi.mock('../../src/services/assistantLaunch', async (importActual) => ({
+  ...(await importActual<typeof import('../../src/services/assistantLaunch')>()),
+  resolveExecutable: (name: string) => (name === 'claude' ? '/opt/claude/bin/claude' : undefined),
+}));
+
 const repo = path.resolve(__dirname, '../..');
 let root: string;
 let panel: ReturnType<typeof vscode.createMockWebviewPanel>;
@@ -91,15 +98,19 @@ it('launches native source guidance only after a current plan is reviewed', asyn
   (vscode.workspace as any).isTrusted = true;
   vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Launch' as any);
   const launch = vi.spyOn(vscode.window, 'createTerminal');
+  // A project venv: the assistant must see it first on PATH, as a shell activation would arrange.
+  fs.mkdirSync(path.join(root, '.venv', 'bin'), { recursive: true });
   try {
     await panel._simulateMessage({ type: 'launchClaudeSync' });
     expect(error()).toBeUndefined();
     const options = launch.mock.calls.at(-1)![0] as any;
-    expect(options.shellPath).toBe('claude');
+    expect(options.shellPath).toBe('/opt/claude/bin/claude');
     expect(options.shellArgs).toHaveLength(1);
     expect(options.shellArgs[0]).toContain('verify the SHA-256 hashes');
     expect(options.shellArgs[0]).toContain('never deploy');
     expect(options.shellArgs[0]).not.toContain('dbt compile');
+    expect(options.env.PATH.split(path.delimiter)[0]).toBe(path.join(root, '.venv', 'bin'));
+    expect(options.env.VIRTUAL_ENV).toBe(path.join(root, '.venv'));
     const terminal = vscode.window.terminals.at(-1)!;
     expect(terminal._sentText).toEqual([]);
     terminal.dispose();

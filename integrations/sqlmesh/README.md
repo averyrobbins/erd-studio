@@ -159,9 +159,13 @@ provenance and SHA-256 preconditions covering source/export/bindings/shared desi
   in this or another domain; update the relationships first. Shared model edits
   propagate through the normal editor pipeline. The normal Logical-stage undo
   command reverses the grouped edit.
-- **Edit source with Claude** launches the existing reviewed terminal workflow with
-  native SQLMesh instructions. Other assistants can read the same plan and the
-  installed ERD Studio harness. Source edits support SQL model files: declarations,
+- **Edit source with Claude** launches Claude Code directly (no shell) with
+  native SQLMesh instructions, after the usual confirmation. `claude` is resolved
+  on your PATH (`claude.cmd` on Windows) and the project's Python environment —
+  `erdStudio.sqlmesh.pythonPath`'s directory, then `.venv`/`venv`/`env` — is put
+  first on the PATH it inherits, so the `sqlmesh` it validates with is the
+  project's own. Other assistants can read the same plan and the installed ERD
+  Studio harness. Source edits support SQL model files: declarations,
   projections and the FK/uniqueness audit convention. The assistant must verify
   hashes, preserve model logic/kind, validate locally, and refresh/compare afterward.
   Missing transformation expressions require user input; this is AI-assisted source

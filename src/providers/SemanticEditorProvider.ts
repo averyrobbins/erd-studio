@@ -98,6 +98,7 @@ import { SqlmeshProjectAdapter } from '../services/sqlmeshAdapter';
 import { buildSqlmeshSyncPlan, applySqlmeshLogicalPlan, captureSqlmeshInputs, assertSqlmeshPlanCurrent, foldingByModel } from '../services/sqlmeshSync';
 import type { SqlmeshSyncPlan } from '../services/sqlmeshSync';
 import { sameIdentifier } from '../services/identifierMatching';
+import { assistantEnvironment, resolveExecutable } from '../services/assistantLaunch';
 import type { CatalogData } from '../types/catalog';
 import { OwnWriteTracker, ownWrites } from '../services/ownWriteTracker';
 import type {
@@ -4004,8 +4005,19 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       await this.currentSqlmeshPlan(panelKey ?? '');
       // Launch the assistant directly. No delayed prompt can fall through into a shell
       // when Claude is missing or exits before its interactive interface is ready.
+      // Without a shell there is no PATH lookup and no venv activation either, so
+      // both are done here: the executable is resolved to an absolute path (it is
+      // `claude.cmd` on Windows) and the project's Python environment is put first
+      // on the PATH the assistant inherits, so the `sqlmesh` it validates with is
+      // the project's own.
+      const executable = resolveExecutable('claude');
+      if (!executable) {
+        throw new Error('Claude Code (`claude`) was not found on PATH. Install it, or run the plan with another assistant: it is at ' + planPath + '.');
+      }
+      const env = assistantEnvironment({ workspaceRoot: this.workspaceRoot, pythonPath: getErdStudioSetting('sqlmesh.pythonPath', '') });
       const terminal = vscode.window.createTerminal({ name: 'ERD Studio SQLMesh Sync', cwd: this.workspaceRoot,
-        shellPath: 'claude', shellArgs: [...(skipPermissions ? ['--dangerously-skip-permissions'] : []), prompt] });
+        shellPath: executable, shellArgs: [...(skipPermissions ? ['--dangerously-skip-permissions'] : []), prompt],
+        ...(Object.keys(env).length ? { env } : {}) });
       terminal.show();
       return;
     }
