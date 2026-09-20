@@ -22,8 +22,27 @@
 
 import React from 'react';
 
+import type { DisplayDomain } from '../../../src/types/display';
 import { useEditorStore } from '../../store/editorStore';
 import './PhysicalSourceNotice.css';
+
+/** An ISO timestamp as the viewer's locale writes it; the raw text if it does not parse. */
+export function formatWhen(iso: string): string {
+  const time = Date.parse(iso);
+  if (!Number.isFinite(time)) { return iso; }
+  try {
+    return new Date(time).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return new Date(time).toLocaleString();
+  }
+}
+
+const STATUS_TEXT: Record<NonNullable<DisplayDomain['integration']>['status'], string> = {
+  ready: 'current',
+  stale: 'stale — project files changed since this export; run Refresh Project Metadata',
+  invalid: 'unreadable — the export could not be parsed; run Refresh Project Metadata',
+  missing: 'missing — run Refresh Project Metadata',
+};
 
 export const PhysicalSourceNotice: React.FC = () => {
   const domain = useEditorStore((s) => s.domain);
@@ -32,19 +51,35 @@ export const PhysicalSourceNotice: React.FC = () => {
 
   const integration = domain?.integration;
   if (integration?.provider === 'sqlmesh' && domain?.stage === 'physical') {
-    return <div className="physical-source-notice" role="status">
-      <div className="physical-source-notice__text">
-        SQLMesh metadata — {integration.status}.
-        {integration.warehouse
-          ? integration.warehouse.diagnostic
-            ? ` Warehouse inspection of ${integration.warehouse.environment} failed at ${integration.warehouse.observedAt}: ${integration.warehouse.diagnostic} Types shown are declared or inferred from source.`
-            : ` Warehouse: ${integration.warehouse.environment}, ${integration.warehouse.observed}/${integration.warehouse.total} models observed at ${integration.warehouse.observedAt}. Observed types take precedence; source-only columns are retained. Relationships come from source audits.`
-          : ' Types are declared or inferred. Use Inspect SQLMesh Warehouse (DuckDB) for deployed types.'}
-        {integration.generatedAt && ` Exported ${integration.generatedAt}.`}
-        {integration.diagnostics.length > 0 && <details><summary>{integration.diagnostics.length} diagnostic(s)</summary>
-          <ul>{integration.diagnostics.map((d, i) => <li key={i}>{d}</li>)}</ul></details>}
+    // Dismissal is session-only and the store re-shows the strip when a new
+    // export or inspection arrives (see `sameIntegration`), same as for dbt.
+    if (dismissed) { return null; }
+    const warehouse = integration.warehouse;
+    return (
+      <div className="physical-source-notice" role="status">
+        <span className="physical-source-notice__icon" aria-hidden="true">&#9432;</span>
+        <div className="physical-source-notice__text">
+          SQLMesh export {STATUS_TEXT[integration.status]}
+          {integration.generatedAt && integration.status !== 'missing' ? ` (exported ${formatWhen(integration.generatedAt)})` : ''}.
+          {warehouse
+            ? warehouse.diagnostic
+              ? ` Warehouse inspection of ${warehouse.environment} at ${formatWhen(warehouse.observedAt)} failed: ${warehouse.diagnostic} Types shown are declared or inferred from source.`
+              : ` Warehouse ${warehouse.environment}: ${warehouse.observed}/${warehouse.total} models observed at ${formatWhen(warehouse.observedAt)}. Observed types take precedence; source-only columns are retained. Relationships come from source audits.`
+            : ' Types are declared or inferred from source. Use Inspect SQLMesh Warehouse (DuckDB) for deployed types.'}
+          {integration.diagnostics.length > 0 && <details><summary>{integration.diagnostics.length} diagnostic(s)</summary>
+            <ul>{integration.diagnostics.map((d, i) => <li key={i}>{d}</li>)}</ul></details>}
+        </div>
+        <button
+          type="button"
+          className="physical-source-notice__dismiss"
+          onClick={dismiss}
+          aria-label="Dismiss"
+          title="Dismiss"
+        >
+          &times;
+        </button>
       </div>
-    </div>;
+    );
   }
   const sources = domain?.physicalSources;
   // `sources` is undefined on the logical stage and on any payload from an

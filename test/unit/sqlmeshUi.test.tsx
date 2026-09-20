@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useEditorStore } from '../../webview/store/editorStore';
 import { DiscrepancyPanel } from '../../webview/components/DiscrepancyPanel/DiscrepancyPanel';
 import { SyncMergeModal } from '../../webview/components/SyncMergeModal/SyncMergeModal';
-import { PhysicalSourceNotice } from '../../webview/components/Canvas/PhysicalSourceNotice';
+import { PhysicalSourceNotice, formatWhen } from '../../webview/components/Canvas/PhysicalSourceNotice';
 import { compare } from '../../src/services/discrepancyService';
 import type { DisplayDomain } from '../../src/types/display';
 
@@ -55,8 +55,40 @@ it('labels environment observations, partial coverage and source-only columns', 
   domain.integration!.warehouse = { environment: 'dev', observedAt: '2026-09-20T10:00:00Z', observed: 1, total: 3 };
   useEditorStore.setState({ domain });
   render(<PhysicalSourceNotice />);
-  expect(screen.getByRole('status').textContent).toContain('dev, 1/3 models observed');
+  expect(screen.getByRole('status').textContent).toContain('Warehouse dev: 1/3 models observed');
   expect(screen.getByRole('status').textContent).toContain('source-only columns are retained');
+});
+
+it('writes timestamps for the viewer, explains a stale export, and can be dismissed until a new export lands', () => {
+  const domain = structuredClone(useEditorStore.getState().domain!);
+  domain.integration = { provider: 'sqlmesh', status: 'stale', generatedAt: '2026-09-20T10:00:00Z', diagnostics: [] };
+  useEditorStore.setState({ domain, physicalSourceNoticeDismissed: false });
+  const { unmount } = render(<PhysicalSourceNotice />);
+  const text = screen.getByRole('status').textContent ?? '';
+  expect(text).toContain('SQLMesh export stale');
+  expect(text).toContain('Refresh Project Metadata');
+  expect(text).not.toContain('2026-09-20T10:00:00Z');
+  expect(text).toContain(formatWhen('2026-09-20T10:00:00Z'));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+  expect(screen.queryByRole('status')).toBeNull();
+
+  // The same payload again (a drag re-sets the domain) keeps it dismissed…
+  useEditorStore.getState().setDomain(structuredClone(domain));
+  unmount(); render(<PhysicalSourceNotice />);
+  expect(screen.queryByRole('status')).toBeNull();
+
+  // …a new export does not.
+  const refreshed = structuredClone(domain);
+  refreshed.integration = { provider: 'sqlmesh', status: 'ready', generatedAt: '2026-09-20T11:00:00Z', diagnostics: [] };
+  useEditorStore.getState().setDomain(refreshed);
+  cleanup(); render(<PhysicalSourceNotice />);
+  expect(screen.getByRole('status').textContent).toContain('SQLMesh export current');
+});
+
+it('keeps the raw text when a timestamp does not parse', () => {
+  expect(formatWhen('not a date')).toBe('not a date');
+  expect(formatWhen('2026-09-20T10:00:00Z')).not.toBe('2026-09-20T10:00:00Z');
 });
 
 it('says why a whole inspection failed instead of reporting 0 of N observed', () => {
@@ -66,7 +98,7 @@ it('says why a whole inspection failed instead of reporting 0 of N observed', ()
   useEditorStore.setState({ domain });
   render(<PhysicalSourceNotice />);
   const text = screen.getByRole('status').textContent ?? '';
-  expect(text).toContain("inspection of prdo failed");
+  expect(text).toMatch(/inspection of prdo at .* failed/);
   expect(text).toContain("'prdo' was not found");
   expect(text).not.toContain('0/3 models observed');
 });

@@ -348,6 +348,20 @@ function samePhysicalSources(
   return a.yml === b.yml && a.manifest === b.manifest && a.catalog === b.catalog;
 }
 
+/**
+ * The SQLMesh counterpart: the notice speaks again when a new export or
+ * warehouse inspection lands (or the export goes stale/invalid), not when a
+ * drag re-sets the same domain.
+ */
+function sameIntegration(
+  a: DisplayDomain['integration'],
+  b: DisplayDomain['integration'],
+): boolean {
+  if (!a || !b) { return !a && !b; }
+  return a.provider === b.provider && a.status === b.status && a.generatedAt === b.generatedAt
+    && a.warehouse?.observedAt === b.warehouse?.observedAt && a.warehouse?.diagnostic === b.warehouse?.diagnostic;
+}
+
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
@@ -438,6 +452,7 @@ export const useEditorStore = create<EditorState & EditorActions>()((set) => ({
     // does not.
     physicalSourceNoticeDismissed:
       samePhysicalSources(state.domain?.physicalSources, domain.physicalSources)
+        && sameIntegration(state.domain?.integration, domain.integration)
         ? state.physicalSourceNoticeDismissed
         : false,
     // Clear column selection on domain reload
