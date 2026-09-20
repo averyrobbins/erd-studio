@@ -75,6 +75,7 @@ const SOURCE_LABEL: Record<PhysicalColumnSource, string> = {
   file: 'SQL',
   'sqlmesh-declared': 'MESH',
   'sqlmesh-inferred': 'MESH',
+  'sqlmesh-observed': 'DB',
 };
 
 /** How each source is named in prose (chip tooltip). */
@@ -85,6 +86,7 @@ const SOURCE_PHRASE: Record<PhysicalColumnSource, string> = {
   file: 'the source file only',
   'sqlmesh-declared': 'declared SQLMesh metadata (not warehouse observation)',
   'sqlmesh-inferred': 'SQLMesh query inference (not warehouse observation)',
+  'sqlmesh-observed': 'DuckDB warehouse observation (source-only columns retained)',
 };
 
 /** Join a contributor list as prose: "a", "a and b", "a, b and c". */

@@ -52,7 +52,8 @@ const ACTION_HINTS: Record<string, string> = {
   'update-cardinality-in-physical':        'Will update cardinality in dbt',
 };
 
-function actionToHint(action: string | null): string {
+function actionToHint(action: string | null, native = false): string {
+  if (native && action?.includes('physical')) return 'Prepare SQLMesh source edits for AI review';
   return (action && ACTION_HINTS[action]) ?? 'No changes needed';
 }
 
@@ -222,12 +223,12 @@ function ModelRow({ model, sourceStage, targetStage, isCollapsed, hasFoldableCon
           <span className="sync-modal__selection-summary">
             {selectionSummary.logical > 0 && (
               <span className="sync-modal__selection-chip sync-modal__selection-chip--logical">
-                {selectionSummary.logical} {stageName(sourceStage).toLowerCase()}
+                {selectionSummary.logical} {stageName('logical').toLowerCase()}
               </span>
             )}
             {selectionSummary.physical > 0 && (
               <span className="sync-modal__selection-chip sync-modal__selection-chip--physical">
-                {selectionSummary.physical} {stageName(targetStage).toLowerCase()}
+                {selectionSummary.physical} {stageName('physical').toLowerCase()}
               </span>
             )}
             {selectionSummary.total - selectionSummary.logical - selectionSummary.physical > 0 && (
@@ -266,9 +267,9 @@ function ModelRow({ model, sourceStage, targetStage, isCollapsed, hasFoldableCon
   return (
     <tr className={rowClass}>
       {chevronCell}
-      {renderStageCell('logical')}
+      {renderStageCell(sourceStage as GroundTruth)}
       {itemCell}
-      {renderStageCell('physical')}
+      {renderStageCell(targetStage as GroundTruth)}
     </tr>
   );
 }
@@ -285,14 +286,15 @@ interface ColumnRowProps {
 }
 
 function ColumnRow({ modelName, col, sourceStage, targetStage }: ColumnRowProps) {
+  const native = useEditorStore(s => s.domain?.integration?.provider === 'sqlmesh');
   if (col.status === 'matched') return null;
 
   const key = columnKey(modelName, col.name);
 
   // Compute action hints for tooltips (status is narrowed by the matched guard above)
   const colStatus = isConflictColumnStatus(col.status) ? col.status : 'extra';
-  const logicalHint = actionToHint(deriveColumnAction(colStatus, 'logical', sourceStage as Stage));
-  const physicalHint = actionToHint(deriveColumnAction(colStatus, 'physical', sourceStage as Stage));
+  const sourceHint = actionToHint(deriveColumnAction(colStatus, sourceStage as GroundTruth, sourceStage as Stage), native);
+  const targetHint = actionToHint(deriveColumnAction(colStatus, targetStage as GroundTruth, sourceStage as Stage), native);
 
   let sourceContent: React.ReactNode;
   let targetContent: React.ReactNode;
@@ -327,7 +329,7 @@ function ColumnRow({ modelName, col, sourceStage, targetStage }: ColumnRowProps)
   return (
     <tr className={`sync-modal__row sync-modal__row--column sync-modal__row--conflict sync-modal__row--${col.status}`}>
       <td className="sync-modal__cell sync-modal__cell--chevron" />
-      <AcceptCell side="logical" selectionKey={key} valueColor={sourceColor} hint={logicalHint}>
+      <AcceptCell side={sourceStage as GroundTruth} selectionKey={key} valueColor={sourceColor} hint={sourceHint}>
         {sourceContent}
       </AcceptCell>
       <td className="sync-modal__cell sync-modal__cell--item sync-modal__cell--col-item">
@@ -336,7 +338,7 @@ function ColumnRow({ modelName, col, sourceStage, targetStage }: ColumnRowProps)
         </span>
         <span className="sync-modal__col-name">{col.name}</span>
       </td>
-      <AcceptCell side="physical" selectionKey={key} valueColor={targetColor} hint={physicalHint}>
+      <AcceptCell side={targetStage as GroundTruth} selectionKey={key} valueColor={targetColor} hint={targetHint}>
         {targetContent}
       </AcceptCell>
     </tr>
@@ -352,8 +354,9 @@ function RelationshipRow({ rel, sourceStage, targetStage }: { rel: RelationshipD
 
   // Compute action hints for tooltips (only called for non-matched relationships)
   const relStatus = isConflictRelStatus(rel.status) ? rel.status : 'extra';
-  const logicalHint = actionToHint(deriveRelationshipAction(relStatus, 'logical', sourceStage as Stage));
-  const physicalHint = actionToHint(deriveRelationshipAction(relStatus, 'physical', sourceStage as Stage));
+  const native = useEditorStore(s => s.domain?.integration?.provider === 'sqlmesh');
+  const sourceHint = actionToHint(deriveRelationshipAction(relStatus, sourceStage as GroundTruth, sourceStage as Stage), native);
+  const targetHint = actionToHint(deriveRelationshipAction(relStatus, targetStage as GroundTruth, sourceStage as Stage), native);
 
   let sourceContent: React.ReactNode;
   let targetContent: React.ReactNode;
@@ -372,7 +375,7 @@ function RelationshipRow({ rel, sourceStage, targetStage }: { rel: RelationshipD
   return (
     <tr className={`sync-modal__row sync-modal__row--conflict sync-modal__row--${rel.status === 'cardinality-mismatch' ? 'mismatch' : rel.status}`}>
       <td className="sync-modal__cell sync-modal__cell--chevron" />
-      <AcceptCell side="logical" selectionKey={key} hint={logicalHint}>{sourceContent}</AcceptCell>
+      <AcceptCell side={sourceStage as GroundTruth} selectionKey={key} hint={sourceHint}>{sourceContent}</AcceptCell>
       <td className="sync-modal__cell sync-modal__cell--item">
         <span className={`sync-modal__status-badge sync-modal__status-badge--sm sync-modal__status-badge--${rel.status === 'cardinality-mismatch' ? 'cardinality-mismatch' : rel.status}`}>
           {itemStatusText(rel.status)}
@@ -387,7 +390,7 @@ function RelationshipRow({ rel, sourceStage, targetStage }: { rel: RelationshipD
           <span className="sync-modal__rel-col">{rel.toColumn}</span>
         </span>
       </td>
-      <AcceptCell side="physical" selectionKey={key} hint={physicalHint}>{targetContent}</AcceptCell>
+      <AcceptCell side={targetStage as GroundTruth} selectionKey={key} hint={targetHint}>{targetContent}</AcceptCell>
     </tr>
   );
 }
@@ -512,7 +515,7 @@ function ModelRowGroup({ model, conflictCols, sourceStage, targetStage, isCollap
 // ---------------------------------------------------------------------------
 
 export function SyncMergeModal() {
-  const isSqlmesh = useEditorStore((s) => s.domain?.integration?.provider === 'sqlmesh');
+
   const syncMode = useEditorStore((s) => s.syncMode);
   const setSyncMode = useEditorStore((s) => s.setSyncMode);
   const discrepancyReport = useEditorStore((s) => s.discrepancyReport);
@@ -662,7 +665,7 @@ export function SyncMergeModal() {
     document.addEventListener('mouseup', handleMouseUp);
   }, []);
 
-  if (!syncMode || !discrepancyReport || isSqlmesh) return null;
+  if (!syncMode || !discrepancyReport) return null;
 
   const sourceName = stageName(sourceStage);
   const targetName = stageName(targetStage);
@@ -695,7 +698,7 @@ export function SyncMergeModal() {
         <div className="sync-modal__toolbar">
           <div className="sync-modal__toolbar-grid">
             <span />
-            <button className="sync-modal__bulk-btn sync-modal__bulk-btn--logical" onClick={handleBulk('logical')}>
+            <button className={`sync-modal__bulk-btn sync-modal__bulk-btn--${sourceStage}`} onClick={handleBulk(sourceStage)}>
               All {sourceName}
             </button>
             <div className="sync-modal__toolbar-center">
@@ -716,7 +719,7 @@ export function SyncMergeModal() {
                 )}
               </span>
             </div>
-            <button className="sync-modal__bulk-btn sync-modal__bulk-btn--physical" onClick={handleBulk('physical')}>
+            <button className={`sync-modal__bulk-btn sync-modal__bulk-btn--${targetStage}`} onClick={handleBulk(targetStage)}>
               All {targetName}
             </button>
           </div>

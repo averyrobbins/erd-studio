@@ -15,7 +15,7 @@ const relative = (p: string) => !!p && !path.isAbsolute(p) && !p.includes('\\') 
 
 export function parseSqlmeshSnapshot(raw: string): SqlmeshSnapshot {
   const s: unknown = JSON.parse(raw);
-  if (!object(s) || s.schemaVersion !== 1 || s.provider !== 'sqlmesh'
+  if (!object(s) || ![1, 2].includes(s.schemaVersion as number) || s.provider !== 'sqlmesh'
     || typeof s.generatedAt !== 'string' || !Number.isFinite(Date.parse(s.generatedAt))
     || typeof s.sqlmeshVersion !== 'string' || ![null, 'string'].includes(s.gateway === null ? null : typeof s.gateway)
     || ![null, 'string'].includes(s.config === null ? null : typeof s.config)
@@ -52,6 +52,28 @@ export function parseSqlmeshSnapshot(raw: string): SqlmeshSnapshot {
   for (const [file, hash] of Object.entries(s.inputs)) {
     if (!relative(file) || typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid SQLMesh input fingerprint.');
   }
+  if (s.warehouse != null) {
+    const w = s.warehouse;
+    if (s.schemaVersion !== 2 || !object(w) || typeof w.environment !== 'string' || !w.environment
+      || typeof w.observedAt !== 'string' || !Number.isFinite(Date.parse(w.observedAt)) || !Array.isArray(w.models)) throw new Error('Invalid warehouse observation.');
+    const seen = new Set<string>();
+    for (const m of w.models) {
+      if (!object(m) || typeof m.id !== 'string' || !ids.has(m.id) || seen.has(m.id)
+        || !['observed', 'not-deployed', 'unavailable', 'unsupported'].includes(m.status as string)
+        || !(m.relation === null || typeof m.relation === 'string') || !Array.isArray(m.columns)
+        || !(m.diagnostic === undefined || typeof m.diagnostic === 'string')
+        || (m.status === 'observed' && !m.relation)
+        || (m.status !== 'observed' && m.columns.length)) throw new Error('Invalid warehouse model observation.');
+      seen.add(m.id);
+      const cols = new Set<string>();
+      for (const c of m.columns) {
+        if (!object(c) || typeof c.name !== 'string' || !c.name || cols.has(c.name)
+          || typeof c.dataType !== 'string' || !c.dataType || typeof c.description !== 'string') throw new Error('Invalid observed columns.');
+        cols.add(c.name);
+      }
+    }
+    if (seen.size !== ids.size) throw new Error('Incomplete warehouse observation.');
+  }
   return s as unknown as SqlmeshSnapshot;
 }
 
@@ -76,6 +98,13 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
   }
   invalidate(): void { this.signature = ''; }
   get generatedAt(): string | undefined { return this.snapshot?.generatedAt; }
+  getSnapshot(): SqlmeshSnapshot | undefined { return this.snapshot; }
+  get integration(): NonNullable<DisplayDomain['integration']> {
+    const w = this.snapshot?.warehouse;
+    return { provider: 'sqlmesh', status: this.status, generatedAt: this.generatedAt, diagnostics: this.diagnostics,
+      ...(w ? { warehouse: { environment: w.environment, observedAt: w.observedAt,
+        observed: w.models.filter(m => m.status === 'observed').length, total: w.models.length } } : {}) };
+  }
   getModel(name: string): ProjectModel | undefined { return this.snapshot?.models.find(m => m.name === name); }
   relationshipCardinality(fromModel: string, fromColumn: string, toModel: string, toColumn: string) {
     const one = (name: string, col: string) => this.getModel(name)?.uniqueKeys.some(k => k.length === 1 && k[0] === col);
@@ -165,11 +194,15 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
       const actual = this.getModel(logical.name);
       if (!actual) return { name: logical.name, schema: '', description: logical.description ?? '', columns: [], existsInProject: false, missingReason: 'absent' as const };
       const source = actual.columnSource === 'declared' ? 'sqlmesh-declared' as const : 'sqlmesh-inferred' as const;
+      const warehouse = this.snapshot?.warehouse?.models.find(m => m.id === actual.id);
+      const observed = warehouse?.status === 'observed' ? warehouse.columns : [];
+      const columns = new Map(actual.columns.map(c => [c.name, c]));
+      for (const c of observed) columns.set(c.name, { ...c, description: columns.get(c.name)?.description ?? c.description });
       return { name: logical.name, schema: actual.schema, description: actual.description,
-        qualifiedName: actual.id, columnsKnown: actual.columnsKnown, existsInProject: true,
+        qualifiedName: actual.id, columnsKnown: actual.columnsKnown || warehouse?.status === 'observed', existsInProject: true, warehouse,
         rationale: logical.rationale, grain: logical.grain, modelRole: logical.modelRole,
-        provenance: { columns: [source], types: source },
-        columns: actual.columns.map(c => {
+        provenance: { columns: observed.length ? ['sqlmesh-observed' as const, source] : [source], types: observed.length ? 'sqlmesh-observed' as const : source },
+        columns: [...columns.values()].map(c => {
           const design = (logical.columns ?? []).find(l => l.name === c.name);
           return { name: c.name, dataType: c.dataType ?? '', description: c.description,
             isPrimaryKey: design?.isPrimaryKey ?? false, isForeignKey: design?.isForeignKey ?? false,
@@ -185,7 +218,7 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
     return { schemaVersion: domain.schemaVersion, domain: domain.domain, layer: domain.layer,
       description: domain.description, modelFolder: domain.modelFolder, stage: 'physical', models, relationships,
       viewConfig: domain.viewConfig, readOnly: true, positionDraggable: true,
-      integration: { provider: 'sqlmesh', status: this.status, generatedAt: this.generatedAt, diagnostics: this.diagnostics },
+      integration: this.integration,
       identifierCaseSensitive: true };
   }
 }

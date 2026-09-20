@@ -21,7 +21,7 @@ export const list_project_models = {
     const filter = name_contains?.toLowerCase();
     const models = (physical?.models ?? []).filter(m => !filter || m.name.toLowerCase().includes(filter) || m.qualifiedName?.toLowerCase().includes(filter));
     return { content: [{ type: 'text' as const, text: JSON.stringify({ provider: projectAdapter.provider,
-      ...(mesh ? { status: mesh.status, generatedAt: mesh.generatedAt, diagnostics: mesh.diagnostics } : {}),
+      ...(mesh ? { ...mesh.integration } : {}),
       count: models.length, total: names.size, models, relationships: physical?.relationships ?? [] }, null, 2) }] };
   },
 };

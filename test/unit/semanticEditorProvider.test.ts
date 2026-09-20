@@ -833,7 +833,7 @@ describe('requestFeedbackDialog', () => {
 
 
 describe('native SQLMesh editor workflow', () => {
-  it('opens logical and physical views, imports models, compares, and blocks dbt sync execution', async () => {
+  it('opens logical and physical views, imports models, compares, and rejects empty sync execution', async () => {
     fs.rmSync(root, { recursive: true });
     fs.cpSync(path.join(REPO_ROOT, 'test/fixtures/sqlmesh-project'), root, { recursive: true });
     const { provider } = buildProvider(root);
@@ -862,7 +862,7 @@ describe('native SQLMesh editor workflow', () => {
     await waitForType(panel, 'discrepancyReport');
     expect(posted(panel).find(m => m.type === 'discrepancyReport')!.payload.summary.dataTypeMismatches).toBe(0);
     panel._simulateMessage({ type: 'generateSyncPlan', payload: { selections: {} } });
-    await waitForError(panel, /SQLMesh sync plans/);
+    await waitForError(panel, /No actionable resolutions/);
     panel._simulateMessage({ type: 'launchClaudeSync' });
     await new Promise(resolve => setTimeout(resolve, 30));
     expect(vscode.window.terminals).toHaveLength(0);

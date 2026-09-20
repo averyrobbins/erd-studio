@@ -34,7 +34,10 @@ export const PhysicalSourceNotice: React.FC = () => {
   if (integration?.provider === 'sqlmesh' && domain?.stage === 'physical') {
     return <div className="physical-source-notice" role="status">
       <div className="physical-source-notice__text">
-        SQLMesh source metadata — {integration.status}. Types are declared or inferred, not observed in the warehouse.
+        SQLMesh metadata — {integration.status}.
+        {integration.warehouse
+          ? ` Warehouse: ${integration.warehouse.environment}, ${integration.warehouse.observed}/${integration.warehouse.total} models observed at ${integration.warehouse.observedAt}. Observed types take precedence; source-only columns are retained. Relationships come from source audits.`
+          : ' Types are declared or inferred. Use Inspect SQLMesh Warehouse (DuckDB) for deployed types.'}
         {integration.generatedAt && ` Exported ${integration.generatedAt}.`}
         {integration.diagnostics.length > 0 && <details><summary>{integration.diagnostics.length} diagnostic(s)</summary>
           <ul>{integration.diagnostics.map((d, i) => <li key={i}>{d}</li>)}</ul></details>}

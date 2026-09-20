@@ -165,7 +165,7 @@ function RelationshipEntry({ rel, sourceStage, targetStage, onNavigate }: Relati
 // ---------------------------------------------------------------------------
 
 export function DiscrepancyPanel() {
-  const isSqlmesh = useEditorStore((s) => s.domain?.integration?.provider === 'sqlmesh');
+
   const discrepancyVisible = useEditorStore((s) => s.discrepancyVisible);
   const discrepancyReport = useEditorStore((s) => s.discrepancyReport);
   const selectNode = useEditorStore((s) => s.selectNode);
@@ -220,7 +220,7 @@ export function DiscrepancyPanel() {
   }, [syncMode, setSyncMode]);
 
   // Guard: render nothing when overlay is inactive or sync mode active (modal takes over)
-  if (!discrepancyVisible || !discrepancyReport || !summary || (syncMode && !isSqlmesh)) return null;
+  if (!discrepancyVisible || !discrepancyReport || !summary || syncMode) return null;
 
   const { sourceStage, targetStage } = discrepancyReport;
 
@@ -253,10 +253,9 @@ export function DiscrepancyPanel() {
           <button
             className="disc-panel__sync-toggle"
             onClick={handleToggleSyncMode}
-            disabled={isSqlmesh}
-            title={isSqlmesh ? 'SQLMesh sync is not available in this draft' : 'Enter sync mode to reconcile differences'}
+            title="Enter sync mode to reconcile differences"
           >
-            {isSqlmesh ? 'Sync unavailable' : '⊕ Sync'}
+            ⊕ Sync
           </button>
         )}
         <button

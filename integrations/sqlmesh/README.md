@@ -1,9 +1,10 @@
-# SQLMesh integration — first draft
+# SQLMesh integration — development preview
 
 This branch adds native SQLMesh discovery, model import, logical editing, Physical
 view, comparison, AI instructions, and read-only MCP inspection. dbt keeps its
-existing integration. SQLMesh Physical means **source metadata**, not the deployed
-warehouse. Automated SQLMesh sync and domain execution are not available yet.
+existing integration. Physical combines **source metadata** with optional, explicitly
+requested DuckDB observations. Native sync updates the logical design deterministically
+or prepares source edits for an assistant. Deployment remains a separate user action.
 
 ## Try it
 
@@ -78,26 +79,84 @@ audits. Lineage, `grain`, and `references` do not automatically become ERD edges
 Other custom audits, filtered uniqueness, and unresolved arguments are diagnosed
 or omitted. Copying the convention does not run the audit.
 
+## Inspect a deployed DuckDB environment
+
+Set `erdStudio.sqlmesh.environment` (default `prod`), then run **ERD Studio: Inspect
+SQLMesh Warehouse (DuckDB)**. CLI equivalent: add `--environment dev` to the export
+command. **Refresh Project Metadata** returns to source-only mode and clears previous
+observations; repeat inspection for a new warehouse snapshot.
+
+This first implementation supports one native project, one gateway, the built-in
+scheduler, and plain local DuckDB files for both warehouse and state (a separate
+state file is supported). In-memory databases, remote engines, attachments,
+connection hooks/extensions and multiple gateways are rejected. Close any process
+holding a writable DuckDB connection before inspecting; database locks are reported
+as unavailable metadata.
+
+The exporter reads SQLMesh's existing, finalized environment state and resolves its
+promoted models to consumer relations, honoring environment suffixes/catalog mapping.
+It opens DuckDB with `read_only=True`, bypasses normal connection setup, never uses
+SQLMesh's state accessor that can initialize/migrate state, and closes connections.
+It does not query model rows, deploy models or run audits. Project config/macros
+still execute as trusted Python, so this is not a sandbox for arbitrary project code.
+
+Exports retain source columns separately from observations. Observed column types
+win in Physical; the column list is the union, retaining source-only columns.
+The notice and model details show environment, time, coverage, relation and status:
+`observed`, `not-deployed`, `unavailable`, or `unsupported`. Failed inspection does
+not make a source model disappear or imply its columns should be deleted. Embedded
+and external models have no managed relation inspected by this workflow. Edges
+remain source audit declarations, not observed/enforced warehouse constraints.
+
+## Sync selected differences
+
+Use a v5 domain, save project files, refresh metadata, compare stages, then **Sync**.
+Choose **Physical** to adopt metadata into the logical design or **Logical** to
+prepare source edits. Each plan supports one direction; reconcile mixed decisions
+in separate batches. **Prepare sync plan** opens `.erd-studio/.sync-plan.json` for
+review. The plan includes canonical model IDs, exact source paths, environment
+provenance and SHA-256 preconditions covering source/export/bindings/shared designs.
+
+- **Apply to logical design** adds/removes selected columns, updates selected types,
+  and reconciles selected audit-backed relationships/cardinality in one WorkspaceEdit.
+  YAML comments, grain, rationale, key flags, SCD/additivity, and existing descriptions
+  survive. New columns receive source descriptions. Description-only differences are
+  not compared. Column removal is rejected if it would leave dangling relationships
+  in this or another domain; update the relationships first. Shared model edits
+  propagate through the normal editor pipeline. The normal Logical-stage undo
+  command reverses the grouped edit.
+- **Edit source with Claude** launches the existing reviewed terminal workflow with
+  native SQLMesh instructions. Other assistants can read the same plan and the
+  installed ERD Studio harness. Source edits support SQL model files: declarations,
+  projections and the FK/uniqueness audit convention. The assistant must verify
+  hashes, preserve model logic/kind, validate locally, and refresh/compare afterward.
+  Missing transformation expressions require user input; this is AI-assisted source
+  editing, not a deterministic SQL rewriter. Export source-only metadata before
+  generating a source plan so deployed drift is not confused with source drift.
+
+Changed/dirty inputs, replaced plans, stale metadata, unknown authoritative types,
+unsupported source models and mixed directions are rejected. Model creation/removal,
+Python/generated models, seeds and external definitions need a manual source workflow.
+No sync operation runs SQLMesh `plan`, `apply`, `run`, migrations or warehouse DDL.
+
 ## Current boundaries
 
-- No environment-aware warehouse catalog, SQLMesh sync plans, automatic source
-  edits, domain plan/run commands, or composite FK support. dbt commands are
-  blocked on the native integration; the installed AI harness explains the limits.
-- Model coverage is whatever SQLMesh Context loads: SQL, seeds, external models,
-  Python and generated SQL. Disabled models are excluded. Unknown columns remain
-  unknown and do not become deletion suggestions. Model source paths are exported
-  where available; direct model-source navigation is not added in this draft.
+- This is not full dbt parity: composite FKs, automatic source rewrites, model-level
+  sync, model-source navigation, remote warehouse adapters and domain execution
+  remain open. dbt commands are blocked on the native integration.
+- Model discovery covers SQL, seeds, external, Python/generated and disabled models
+  as loaded by SQLMesh. Unknown schemas never become deletion suggestions.
 - Freshness covers standard model/macro/audit/seed/external folders, root config,
-  and bindings. Environment variables, imported Python outside those folders,
-  custom loaders, remote resources, and warehouse changes need explicit refresh;
-  they are not fingerprinted. An artifact alone cannot detect deployed drift.
-- Schema version 1 is validated, including identities, endpoints and relative
-  paths. Configurations, credentials and SQL query bodies are not serialized.
-  Source descriptions and names remain project data; review snapshots before sharing.
-- Verified locally on Linux/Python 3.13 with SQLMesh **0.236.1**, SQLGlot **30.8.0**
-  and DuckDB **1.5.5**. Other versions, dialect execution, operating systems,
-  remote workspaces, and large-project performance are unverified. `_path` is a
-  SQLMesh internal attribute used only for optional source location.
+  bindings and logical files. Environment variables, imported Python elsewhere,
+  custom loaders, remote resources and subsequent warehouse changes require manual
+  refresh. Observation timestamps indicate when metadata was read, not a live check.
+- Readers accept export schemas 1 and 2; the exporter writes 2. Sync plans use their
+  own version 1 native contract. Credentials/config values/query bodies are not
+  serialized. Names and descriptions remain project data; review before sharing.
+- Verified on Linux/Python 3.13 with SQLMesh **0.236.1**, SQLGlot **30.8.0**, DuckDB
+  **1.5.5**. Other versions/platforms and production scale remain unverified.
+  Source `_path`, context adapter injection and the state reader are internal
+  SQLMesh interfaces isolated in the exporter; upgrades need regression tests.
 
 ## Validate locally
 
@@ -113,6 +172,9 @@ python -m venv .venv-sqlmesh
 
 The checked-in native fixture/snapshot keeps JavaScript tests independent of a
 Python installation. Python tests load real projects and exercise the custom
-audit against disposable in-memory DuckDB tables. Regenerate the fixture with
+audit against disposable in-memory DuckDB tables. Warehouse tests deploy only to
+temporary databases, then forbid deployment/migration during inspection and verify
+database bytes, source drift, missing state, environment naming and lock release.
+Regenerate the fixture with
 `export.py --project test/fixtures/sqlmesh-project` after changing its inputs.
 See [MCP instructions](../../mcp-server/README.md) for the separate build/smoke test.

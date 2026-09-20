@@ -80,8 +80,9 @@ export function WelcomeModal() {
                   <strong>Physical</strong>
                   <span>
                     {isSqlmesh ? <>Read the saved SQLMesh export to see declared or inferred columns
-                    and audit relationships. This is source metadata, not observed warehouse tables.
-                    Use Refresh Project Metadata after changing your SQLMesh project.</> : <>Automatically read from your dbt project — see what's
+                    and audit relationships. Use Inspect SQLMesh Warehouse (DuckDB) for deployed
+                    environment types, or Refresh Project Metadata for source-only data.
+                    Compare stages and use Sync to reconcile selected differences.</> : <>Automatically read from your dbt project — see what's
                     actually there. Data types come from your .yml files, from a
                     compiled manifest, or — most accurately — from your warehouse
                     once <code>dbt docs generate</code> has been run.</>}

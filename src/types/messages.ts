@@ -120,6 +120,7 @@ export interface SyncPlanGeneratedMessage {
   payload: {
     filePath: string;
     totalActions: number;
+    direction?: 'metadata-to-logical' | 'logical-to-source';
   };
 }
 
@@ -188,6 +189,7 @@ export type ExtensionMessage =
   | StageDataMessage
   | DiscrepancyReportMessage
   | ManifestStalenessMessage
+  | { type: 'sqlmeshLogicalSyncApplied' }
   | SyncPlanGeneratedMessage
   | ErrorMessage;
 
@@ -809,6 +811,7 @@ export type WebviewMessage =
   | CopyFeedbackReportMessage
   | OpenFeedbackLinkMessage
   | RequestReloadMessage
+  | { type: 'applySqlmeshLogicalSync' }
   | GenerateSyncPlanMessage
   | RunDbtCompileMessage
   | LaunchClaudeSyncMessage

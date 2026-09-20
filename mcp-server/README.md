@@ -107,7 +107,9 @@ The MCP server still works on uninitialized projects — `list_manifest_models` 
 Follow the [exporter setup](../integrations/sqlmesh/README.md) to produce
 `.erd-studio/sqlmesh.json`. MCP reads this artifact and never starts Python,
 executes project code, or inspects warehouse tables. Declared/inferred SQLMesh
-types are not observed warehouse schemas; audit declarations do not prove passing
+types are distinct from optional saved warehouse observations. `list_project_models`
+includes observation environment/time/coverage and per-model relation/status/columns.
+It never refreshes those observations itself. Audit declarations do not prove passing
 audits. Missing, stale or invalid snapshots are reported by `list_project_models`.
 
 From the repository root, run `npm ci`, then in `mcp-server/`:

@@ -1,6 +1,6 @@
 # SQLMesh integration feasibility
 
-Assessed 2026-09-20 against ERD Studio **1.0.5**, commit `ecb9ba0108d759b386aa4fa192190ee25f0f06da`, on branch `sqlmesh-integration`. Based on repository source, tests, SQLMesh stable documentation, and selected upstream implementation details. The assessment below describes that baseline; the first-draft implementation status is recorded at the end.
+Assessed 2026-09-20 against ERD Studio **1.0.5**, commit `ecb9ba0108d759b386aa4fa192190ee25f0f06da`, on branch `sqlmesh-integration`. Based on repository source, tests, SQLMesh stable documentation, and selected upstream implementation details. The assessment below describes that baseline; implementation status and remaining gaps are recorded at the end.
 
 ## Conclusion
 
@@ -82,7 +82,7 @@ Original assessment boundary: source and test review only. Subsequent first-draf
 
 ## First-draft implementation
 
-The branch now contains the first working metadata/editor integration. It adds a
+The initial implementation added the first working metadata/editor integration. It adds a
 shared adapter boundary, native project detection and settings, an explicitly
 invoked Python exporter, stable qualified identities and logical aliases, Add
 Existing Model, Physical view, comparison, freshness/provenance diagnostics,
@@ -91,25 +91,51 @@ existing readers and workflows. See the [setup guide](integrations/sqlmesh/READM
 
 A supplied `erd_relationship` audit provides single-column FK evidence. Recognized
 unfiltered uniqueness audits determine cardinality. Unknown schemas and unsupported
-audit arguments are reported without inventing columns or relationships. The export
-is source metadata; it does not establish warehouse state or successful audit runs.
+audit arguments are reported without inventing columns or relationships. The initial export
+contained source metadata only; audit declarations do not establish successful runs.
 Opening diagrams, file watching and MCP reads never execute Python. Explicit refresh
 requires a trusted workspace and runs in the selected project environment.
 
-The implementation is deliberately short of full parity: warehouse observation,
-composite FK semantics, automated sync/source editing, model-source navigation and
-domain plan/run generation remain open. Freshness covers standard project paths,
-not environment variables, arbitrary imported code, remote resources or warehouse
-changes. Cross-platform/engine behavior and production-scale performance remain
-unverified. The native fixture covers SQL, seed, external, Python/generated and
-disabled models, duplicate basenames and an FK audit; exporter validation uses
-SQLMesh 0.236.1, SQLGlot 30.8.0 and disposable DuckDB tables locally.
+## Sync and introspection implementation
 
-Validation completed: TypeScript checks, development/production builds, **1,582
-JavaScript tests across 67 files**, **6 Python integration tests**, MCP type-check/
-build/smoke checks, and a packaged VSIX (15 files, including the exporter). Both
-runtime dependency audits reported zero vulnerabilities. A browser preview of the
-real webview verified native model details/import options, FK rendering, comparison
-and the disabled sync entry point. VS Code activation/editing is covered with the
-repository's mocked host tests; installation in a real VS Code host has not been
-tested. No SQLMesh deployment plan was applied and no warehouse was changed.
+The next iteration adds three workflows (see the [setup guide](integrations/sqlmesh/README.md)):
+
+| Workflow | Implemented behavior | Boundary |
+|---|---|---|
+| DuckDB inspection | Explicit read-only refresh resolves promoted relations using finalized environment state; preserves source and observed columns/types separately | Single project/gateway, built-in scheduler, local DuckDB files; remote engines and attachments deferred |
+| Metadata → logical | Reviewed selections update columns/types and audit-backed relationships/cardinality through one undoable, comment-preserving WorkspaceEdit | v5 domains; one direction per plan; descriptions copied only for new columns; dangling/shared relationship removals rejected |
+| Logical → SQLMesh | Versioned native plan with canonical IDs, exact source paths, hashes and AI instructions; integrated Claude launch and other harness guidance | Assisted SQL source edits, not autonomous SQL synthesis; Python/generators/seeds/external models and model-level actions need manual work |
+
+Warehouse observations record environment, relation, timestamp, coverage and failure
+status. Source-only columns remain visible; observed types take precedence. A failed
+lookup never proves a source column/model was deleted. FK edges still reflect source
+audits, not passing audits or enforced warehouse constraints. Normal refresh restores
+source-only mode; source plans require that mode to separate source edits from deployed drift.
+
+Sync refuses stale/changed/dirty inputs and replaced plans. Logical updates retain
+comments, rationale, grain, key/SCD/additivity fields and reviewed descriptions.
+Source instructions require hash verification, local validation and a fresh comparison.
+SQLMesh deployment is explicitly separate. Inspection avoids `Context.state_reader`,
+whose lazy initialization can migrate state, and uses read-only DuckDB connections.
+Trusted config/macros still execute; arbitrary project Python is not sandboxed.
+
+Full parity still needs remote warehouse adapters, broader audit/composite-FK support,
+model creation/removal and generated-source workflows, direct source navigation,
+domain execution planning, cross-platform tests and large-project validation.
+Freshness cannot detect external imports, environment variables, remote services or
+warehouse changes after the last explicit inspection. SQLMesh internal API usage
+requires upgrade testing. Supported/tested runtime remains SQLMesh 0.236.1,
+SQLGlot 30.8.0 and DuckDB 1.5.5 on Linux/Python 3.13.
+
+Validation: TypeScript checks, development/production builds, **1,602 JavaScript tests
+across 69 files**, **16 Python integration tests**, MCP type-check/build/smoke checks,
+and a VSIX containing 15 entries with the exact exporter source. Both runtime
+dependency audits report zero vulnerabilities. Real DuckDB tests cover production,
+development, forward-only previews, alternate environment suffixes, source/deployed
+drift, unavailable relations, missing state/database, unchanged database bytes and
+connection cleanup. Editor tests cover both sync directions, grouped writes,
+comment/design-field preservation, stale/replaced plans and shared relationships.
+The rendered webview was checked for observation labels and both sync action paths.
+VS Code host/Claude launching uses mocks; live installation and a real assistant
+source-edit session remain unverified. Deployments occurred only in disposable test
+databases. No user warehouse or SQLMesh project was deployed.

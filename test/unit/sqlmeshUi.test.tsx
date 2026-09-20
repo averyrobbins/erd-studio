@@ -1,40 +1,60 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useEditorStore } from '../../webview/store/editorStore';
 import { DiscrepancyPanel } from '../../webview/components/DiscrepancyPanel/DiscrepancyPanel';
 import { SyncMergeModal } from '../../webview/components/SyncMergeModal/SyncMergeModal';
+import { PhysicalSourceNotice } from '../../webview/components/Canvas/PhysicalSourceNotice';
 import { compare } from '../../src/services/discrepancyService';
 import type { DisplayDomain } from '../../src/types/display';
 
-vi.mock('@xyflow/react', () => ({
-  Panel: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  useReactFlow: () => ({ fitView: vi.fn() }),
-}));
-vi.mock('../../webview/hooks/useVsCodeApi', () => ({
-  useVsCodeApi: () => ({ postMessage: vi.fn(), getState: vi.fn(), setState: vi.fn() }),
-}));
+const post = vi.hoisted(() => vi.fn());
+vi.mock('@xyflow/react', () => ({ Panel: ({ children }: { children: React.ReactNode }) => <div>{children}</div>, useReactFlow: () => ({ fitView: vi.fn() }) }));
+vi.mock('../../webview/hooks/useVsCodeApi', () => ({ useVsCodeApi: () => ({ postMessage: post, getState: vi.fn(), setState: vi.fn() }) }));
 
 beforeEach(() => {
+  post.mockClear();
   const physical: DisplayDomain = { schemaVersion: 5, domain: 'orders', layer: 'silver', stage: 'physical',
-    description: '', models: [], relationships: [], viewConfig: {},
+    description: '', models: [{ name: 'orders', schema: '', description: '', columns: [{ name: 'id', dataType: 'INT', description: '', isPrimaryKey: false, isForeignKey: false }] }], relationships: [], viewConfig: {},
     integration: { provider: 'sqlmesh', status: 'ready', diagnostics: [] } };
-  const logical: DisplayDomain = { ...physical, stage: 'logical', models: [{ name: 'draft_model', schema: '', description: '', columns: [] }] };
+  const logical = structuredClone(physical); logical.stage = 'logical'; logical.models[0].columns[0].dataType = 'TEXT';
   useEditorStore.setState({ domain: physical, discrepancyVisible: true, discrepancyReport: compare(physical, logical),
-    syncMode: false, syncSelections: {}, manifestStale: false });
+    syncMode: false, syncSelections: {}, syncPlanGenerated: null, manifestStale: false });
 });
 afterEach(cleanup);
 
-it('displays native differences while disabling the unsupported sync entry point', () => {
-  render(<DiscrepancyPanel />);
-  expect(screen.getByText('draft_model')).toBeTruthy();
-  expect((screen.getByRole('button', { name: 'Sync unavailable' }) as HTMLButtonElement).disabled).toBe(true);
+it('enables native sync and selects the actual displayed stage when comparing from Physical', () => {
+  render(<><DiscrepancyPanel /><SyncMergeModal /></>);
+  fireEvent.click(screen.getByRole('button', { name: '⊕ Sync' }));
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'All Physical' }));
+  expect(useEditorStore.getState().syncSelections).toEqual({ 'col:orders:id': 'physical' });
+  fireEvent.click(screen.getByRole('button', { name: /Prepare sync plan/ }));
+  expect(post).toHaveBeenCalledWith({ type: 'generateSyncPlan', payload: { selections: { 'col:orders:id': 'physical' } } });
 });
 
-it('ignores a restored dbt sync mode in a native project and keeps comparison visible', () => {
-  useEditorStore.setState({ syncMode: true });
-  render(<><DiscrepancyPanel /><SyncMergeModal /></>);
-  expect(screen.getByText('draft_model')).toBeTruthy();
-  expect(screen.queryByRole('dialog')).toBeNull();
+it('per-column acceptance respects reversed stage order and invalidates an old reviewed plan', () => {
+  useEditorStore.setState({ syncMode: true, syncPlanGenerated: { filePath: 'plan', totalActions: 1, direction: 'logical-to-source' } });
+  render(<SyncMergeModal />);
+  fireEvent.click(screen.getByRole('button', { name: 'Physical' }));
+  expect(useEditorStore.getState().syncSelections['col:orders:id']).toBe('physical');
+  expect(useEditorStore.getState().syncPlanGenerated).toBeNull();
+  expect(screen.getByRole('button', { name: /Prepare sync plan/ })).toBeTruthy();
+});
+
+it.each(['metadata-to-logical', 'logical-to-source'] as const)('exposes the correct execution route for %s', direction => {
+  useEditorStore.setState({ syncMode: true, syncPlanGenerated: { filePath: 'plan', totalActions: 1, direction } });
+  render(<SyncMergeModal />);
+  fireEvent.click(screen.getByRole('button', { name: direction === 'metadata-to-logical' ? 'Apply to logical design' : 'Edit source with Claude' }));
+  expect(post).toHaveBeenCalledWith({ type: direction === 'metadata-to-logical' ? 'applySqlmeshLogicalSync' : 'launchClaudeSync' });
+});
+
+it('labels environment observations, partial coverage and source-only columns', () => {
+  const domain = structuredClone(useEditorStore.getState().domain!);
+  domain.integration!.warehouse = { environment: 'dev', observedAt: '2026-09-20T10:00:00Z', observed: 1, total: 3 };
+  useEditorStore.setState({ domain });
+  render(<PhysicalSourceNotice />);
+  expect(screen.getByRole('status').textContent).toContain('dev, 1/3 models observed');
+  expect(screen.getByRole('status').textContent).toContain('source-only columns are retained');
 });

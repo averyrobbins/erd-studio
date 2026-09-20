@@ -154,6 +154,7 @@ const NO_PROJECT_MESSAGE =
  * of `activate()` is the matching allow-list of pre-rename names.
  */
 export const NO_LEGACY_ALIAS = new Set([
+  'erdStudio.inspectSqlmeshWarehouse',
   'erdStudio.reportBug',
   'erdStudio.setFeedbackApiKey',
   'erdStudio.clearFeedbackApiKey',
@@ -1130,7 +1131,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await vscode.commands.executeCommand('vscode.openWith', newFileUri, DOMAIN_EDITOR_VIEW_TYPE);
       },
     ),
-    vscode.commands.registerCommand('erdStudio.refreshManifest', async () => {
+    vscode.commands.registerCommand('erdStudio.inspectSqlmeshWarehouse', async () => {
+      if (projectAdapter.provider !== 'sqlmesh') {
+        void vscode.window.showInformationMessage('Warehouse inspection is available for native SQLMesh DuckDB projects.');
+        return;
+      }
+      await vscode.commands.executeCommand('erdStudio.refreshManifest', true);
+    }),
+    vscode.commands.registerCommand('erdStudio.refreshManifest', async (inspectWarehouse = false) => {
       if (projectAdapter instanceof SqlmeshProjectAdapter) {
         if (!vscode.workspace.isTrusted) {
           void vscode.window.showWarningMessage('Trust this workspace before executing SQLMesh project configuration. Saved metadata can still be viewed.');
@@ -1143,6 +1151,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               exporter: path.join(context.extensionUri.fsPath, 'dist', 'sqlmesh_export.py'),
               python: getErdStudioSetting('sqlmesh.pythonPath', ''),
               gateway: getErdStudioSetting('sqlmesh.gateway', ''), config: getErdStudioSetting('sqlmesh.config', ''),
+              environment: inspectWarehouse === true ? (getErdStudioSetting('sqlmesh.environment', 'prod') || 'prod') : undefined,
             });
             projectAdapter.invalidate();
             await projectAdapter.load();

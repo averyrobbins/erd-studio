@@ -122,7 +122,8 @@ export const SyncFooter: React.FC<SyncFooterProps> = ({ totalKeys }) => {
     vscode.postMessage({ type: 'launchClaudeSync' });
   }, [vscode]);
 
-  if (isSqlmesh) return <div className="disc-panel__sync-footer">SQLMesh comparison is available. Sync execution is not included in this draft.</div>;
+  const handleApplyLogical = () => vscode.postMessage({ type: 'applySqlmeshLogicalSync' });
+  const logicalPlan = isSqlmesh && syncPlanGenerated?.direction === 'metadata-to-logical';
 
   if (syncPlanGenerated) {
     return (
@@ -135,10 +136,10 @@ export const SyncFooter: React.FC<SyncFooterProps> = ({ totalKeys }) => {
         </div>
         <button
           className="disc-panel__sync-execute-btn"
-          onClick={handleLaunchClaude}
-          title="Open a terminal and launch Claude Code to execute the changes (you will be asked to confirm the command first)"
+          onClick={logicalPlan ? handleApplyLogical : handleLaunchClaude}
+          title={logicalPlan ? "Apply the reviewed plan as one undoable edit" : "Launch Claude Code to edit source files; deployment remains separate"}
         >
-          Execute with Claude
+          {logicalPlan ? 'Apply to logical design' : isSqlmesh ? 'Edit source with Claude' : 'Execute with Claude'}
         </button>
       </div>
     );
@@ -151,11 +152,11 @@ export const SyncFooter: React.FC<SyncFooterProps> = ({ totalKeys }) => {
         disabled={selectedCount === 0}
         onClick={handleGenerate}
       >
-        Apply Changes{selectedCount > 0 ? ` (${selectedCount})` : ''}
+        {isSqlmesh ? 'Prepare sync plan' : 'Apply Changes'}{selectedCount > 0 ? ` (${selectedCount})` : ''}
       </button>
       {totalKeys > 0 && selectedCount === 0 && (
         <span className="disc-panel__sync-footer-hint">
-          Choose a side for each difference above, then apply
+          {isSqlmesh ? 'Select Physical to update the logical design, or Logical to prepare source edits. Use one direction per plan.' : 'Choose a side for each difference above, then apply'}
         </span>
       )}
       {selectedCount > 0 && remaining > 0 && (

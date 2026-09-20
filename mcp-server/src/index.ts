@@ -45,7 +45,7 @@ Typical inspection workflow:
 4. list_project_models — inspect project metadata, with provenance (compare to design)
 
 SQLMesh reads a saved export only. It never launches Python from an MCP read.
-Use list_project_models for SQLMesh status and diagnostics. Source metadata is not warehouse observation.
+Use list_project_models for SQLMesh status, diagnostics and optional saved warehouse observations. Source metadata and audit declarations are separate from observed warehouse columns.
 
 When the user asks about editing/designing/building, call get_editor_setup and surface
 the install path instead of trying to fulfill the request through file edits.`;

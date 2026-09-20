@@ -95,6 +95,8 @@ import type { ReportTrackingService } from '../services/reportTrackingService';
 import type { CatalogService } from '../services/catalogService';
 import type { ProjectAdapter } from '../services/projectAdapter';
 import { SqlmeshProjectAdapter } from '../services/sqlmeshAdapter';
+import { buildSqlmeshSyncPlan, applySqlmeshLogicalPlan, captureSqlmeshInputs, assertSqlmeshPlanCurrent } from '../services/sqlmeshSync';
+import type { SqlmeshSyncPlan } from '../services/sqlmeshSync';
 import type { CatalogData } from '../types/catalog';
 import { OwnWriteTracker, ownWrites } from '../services/ownWriteTracker';
 import type {
@@ -361,6 +363,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       lastDiscrepancyReport?: DiscrepancyReport | null;
       /** The target stage from the last discrepancy comparison (used to refresh after stub toggle). */
       lastCompareAgainst?: Stage;
+      sqlmeshPlan?: { plan: SqlmeshSyncPlan; text: string };
     }
   >();
 
@@ -651,7 +654,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
         const NON_MUTATION_TYPES = new Set([
           'ready', 'updatePositions', 'switchStage', 'toggleDiscrepancy',
           'refreshManifest', 'dismissWelcome',
-          'viewFile', 'generateSyncPlan', 'runDbtCompile', 'launchClaudeSync',
+          'viewFile', 'generateSyncPlan', 'applySqlmeshLogicalSync', 'runDbtCompile', 'launchClaudeSync',
           'addAnnotation', 'updateAnnotation', 'removeAnnotation', 'removeAnnotations',
           'requestReload',
           'requestFeedbackContext', 'analyzeFeedback', 'setFeedbackProvider',
@@ -1099,14 +1102,14 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
             break;
           }
           case 'generateSyncPlan': {
-            if (this.projectAdapter?.provider === 'sqlmesh') {
-              this.post(webviewPanel.webview, { type: 'error', payload: { message: 'SQLMesh sync plans are not available in this first draft.' } });
-              break;
-            }
             const payload = (message as { payload?: { selections: Record<string, GroundTruth> } }).payload;
             if (payload) {
               await this.handleGenerateSyncPlan(panelKey, document, webviewPanel.webview, payload.selections);
             }
+            break;
+          }
+          case 'applySqlmeshLogicalSync': {
+            await this.queueEdit(panelKey, () => this.handleApplySqlmeshLogicalSync(panelKey, document, webviewPanel.webview));
             break;
           }
           case 'runDbtCompile': {
@@ -1114,7 +1117,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
             break;
           }
           case 'launchClaudeSync': {
-            await this.handleLaunchClaudeSync();
+            await this.handleLaunchClaudeSync(panelKey);
             break;
           }
           case 'reorderColumns': {
@@ -1558,8 +1561,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
 
     return {
       ...(this.projectAdapter instanceof SqlmeshProjectAdapter ? {
-        integration: { provider: 'sqlmesh' as const, status: this.projectAdapter.status,
-          generatedAt: this.projectAdapter.generatedAt, diagnostics: this.projectAdapter.diagnostics },
+        integration: this.projectAdapter.integration,
         identifierCaseSensitive: true,
       } : {}),
       schemaVersion: domain.schemaVersion,
@@ -3624,6 +3626,10 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     selections: Record<string, GroundTruth>,
   ): Promise<void> {
     try {
+      if (this.projectAdapter instanceof SqlmeshProjectAdapter) {
+        await this.handleGenerateSqlmeshSyncPlan(panelKey, document, webview, selections);
+        return;
+      }
       const panel = this.openPanels.get(panelKey);
       if (!panel?.lastDiscrepancyReport) {
         webview.postMessage({
@@ -3817,6 +3823,91 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     }
   }
 
+  private async sqlmeshSyncContext(document: vscode.TextDocument) {
+    const adapter = this.projectAdapter;
+    if (!(adapter instanceof SqlmeshProjectAdapter)) throw new Error('This action requires a native SQLMesh project.');
+    if (detectDomainFormat(JSON.parse(document.getText())) !== 'v5') throw new Error('Migrate this domain to v5 before using native sync.');
+    const semanticDir = getErdStudioSetting('semanticDir', '.erd-studio');
+    if (vscode.workspace.textDocuments.some(doc => doc.isDirty && doc.uri.fsPath.startsWith(this.workspaceRoot + path.sep))) {
+      throw new Error('Save project and logical model files before preparing or executing a sync plan.');
+    }
+    adapter.invalidate();
+    const data = await adapter.load();
+    if (adapter.status !== 'ready') throw new Error('Refresh SQLMesh metadata before syncing. The current export is missing, invalid or stale.');
+    this.logicalModelService.invalidateCache();
+    const snapshot = adapter.getSnapshot()!;
+    const unified = this.domainService.getDomain(document.uri.fsPath);
+    const physical = adapter.buildPhysical(unified, data);
+    const logical = await this.buildStageDisplayDomain(document, 'logical', data.manifest, data.declarations);
+    const domainPath = path.relative(this.workspaceRoot, document.uri.fsPath).split(path.sep).join('/');
+    const preconditions = captureSqlmeshInputs(this.workspaceRoot, semanticDir, snapshot, domainPath);
+    return { adapter, snapshot, unified, physical, logical, preconditions, semanticDir, domainPath };
+  }
+
+  private async handleGenerateSqlmeshSyncPlan(panelKey: string, document: vscode.TextDocument,
+    webview: vscode.Webview, selections: Record<string, GroundTruth>): Promise<void> {
+    const panel = this.openPanels.get(panelKey);
+    if (!panel?.lastDiscrepancyReport) throw new Error('Compare stages before preparing a sync plan.');
+    const context = await this.sqlmeshSyncContext(document);
+    const source = panel.lastDiscrepancyReport.sourceStage;
+    const report = compareStages(source === 'logical' ? context.logical : context.physical,
+      source === 'logical' ? context.physical : context.logical, new Set(context.unified.stubColumns ?? []));
+    if (JSON.stringify(report) !== JSON.stringify(panel.lastDiscrepancyReport)) throw new Error('The comparison changed. Compare again before choosing resolutions.');
+    const plan = buildSqlmeshSyncPlan({ report, selections, snapshot: context.snapshot,
+      domainPath: context.domainPath, semanticDir: context.semanticDir, preconditions: context.preconditions });
+    if (plan.direction === 'metadata-to-logical') {
+      // Validate the complete patch before presenting it as executable.
+      applySqlmeshLogicalPlan(plan, context.unified, context.physical);
+      this.checkSqlmeshSharedRemovals(plan, document.uri.fsPath, context.semanticDir);
+    }
+    const text = JSON.stringify(plan, null, 2) + '\n';
+    const filePath = path.join(this.workspaceRoot, context.semanticDir, '.sync-plan.json');
+    fs.writeFileSync(filePath, text, 'utf8');
+    panel.sqlmeshPlan = { plan, text };
+    this.post(webview, { type: 'syncPlanGenerated', payload: { filePath,
+      totalActions: plan.columns.length + plan.relationships.length, direction: plan.direction } });
+    await vscode.window.showTextDocument(vscode.Uri.file(filePath), { preview: true, viewColumn: vscode.ViewColumn.Beside });
+  }
+
+  private checkSqlmeshSharedRemovals(plan: SqlmeshSyncPlan, domainFile: string, semanticDir: string): void {
+    const removals = plan.columns.filter(c => c.action === 'remove-column-from-logical');
+    if (!removals.length) return;
+    for (const other of this.domainService.listDomains(this.workspaceRoot, semanticDir)) {
+      if (other.filePath === domainFile) continue;
+      const domain = this.domainService.getDomain(other.filePath);
+      for (const c of removals) {
+        if (domain.logical.relationships.some(r => relationshipReferencesColumn(r, c.modelName, c.columnName))) {
+          throw new Error(`Cannot remove ${c.modelName}.${c.columnName}: it is referenced by a relationship in ${other.domain}. Update that domain first.`);
+        }
+      }
+    }
+  }
+
+  private async currentSqlmeshPlan(panelKey: string) {
+    const panel = this.openPanels.get(panelKey);
+    if (!panel?.sqlmeshPlan) throw new Error('Prepare and review a SQLMesh sync plan in this editor first.');
+    const context = await this.sqlmeshSyncContext(panel.document);
+    const saved = fs.readFileSync(path.join(this.workspaceRoot, context.semanticDir, '.sync-plan.json'), 'utf8');
+    if (saved !== panel.sqlmeshPlan.text) throw new Error('The reviewed sync plan changed or was replaced. Regenerate it before execution.');
+    assertSqlmeshPlanCurrent(panel.sqlmeshPlan.plan, context.preconditions);
+    return { ...context, plan: panel.sqlmeshPlan.plan };
+  }
+
+  private async handleApplySqlmeshLogicalSync(panelKey: string, document: vscode.TextDocument, webview: vscode.Webview): Promise<void> {
+    const context = await this.currentSqlmeshPlan(panelKey);
+    const patch = applySqlmeshLogicalPlan(context.plan, context.unified, context.physical);
+    this.checkSqlmeshSharedRemovals(context.plan, document.uri.fsPath, context.semanticDir);
+    const success = await this.applyDomainEdit(document, section => { section.relationships = patch.relationships; },
+      { webview, stage: 'logical', modelFiles: { save: patch.models.map(model => ({ model })) }, errorLabel: 'SQLMesh logical sync could not be applied.' });
+    if (success) {
+      const panel = this.openPanels.get(panelKey);
+      if (panel) panel.sqlmeshPlan = undefined;
+      this.post(webview, { type: 'sqlmeshLogicalSyncApplied' });
+      if (panel?.lastCompareAgainst) await this.handleToggleDiscrepancy(panelKey, document, webview,
+        { enabled: true, compareAgainst: panel.lastCompareAgainst });
+    }
+  }
+
   /**
    * Run `dbt compile` in a VS Code terminal.
    * The existing FileWatcherService will detect manifest changes and refresh.
@@ -3844,15 +3935,19 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
    * closes the terminal in the meantime the send is skipped rather than
    * throwing "Terminal has already been disposed" inside the timer.
    */
-  private async handleLaunchClaudeSync(): Promise<void> {
-    if (this.projectAdapter?.provider === 'sqlmesh') {
-      void vscode.window.showInformationMessage('SQLMesh sync execution is not available in this first draft.');
-      return;
+  private async handleLaunchClaudeSync(panelKey?: string): Promise<void> {
+    const native = this.projectAdapter?.provider === 'sqlmesh';
+    if (native) {
+      if (!vscode.workspace.isTrusted) throw new Error('Trust this workspace before launching an assistant to edit SQLMesh source.');
+      const { plan } = await this.currentSqlmeshPlan(panelKey ?? '');
+      if (plan.direction !== 'logical-to-source') throw new Error('Use Apply to logical design for this plan.');
     }
     const semanticDir = getErdStudioSetting('semanticDir', '.erd-studio');
     const skipPermissions = getErdStudioSetting<boolean>('claudeSync.skipPermissions', false) === true;
     const planPath = `${semanticDir}/.sync-plan.json`;
-    const prompt = `Execute the erd-studio sync plan at ${planPath} using the erd-studio skill. Read .claude/skills/erd-studio/SYNC.md for the action reference and follow the execution steps.`;
+    const prompt = native
+      ? `Review and execute the native SQLMesh source-edit plan at ${planPath}. Read its instructions and preconditions first and verify the SHA-256 hashes before editing. Do not use a dbt sync guide. Validate source changes locally and refresh metadata; never deploy or run plan/apply/run/migrate/audit/evaluate. Report changes and any unresolved choices.`
+      : `Execute the erd-studio sync plan at ${planPath} using the erd-studio skill. Read .claude/skills/erd-studio/SYNC.md for the action reference and follow the execution steps.`;
 
     const claudeCommand = skipPermissions ? 'claude --dangerously-skip-permissions' : 'claude';
     const activate = findVenvActivate(this.workspaceRoot);
@@ -3875,6 +3970,15 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       return;
     }
 
+    if (native) {
+      await this.currentSqlmeshPlan(panelKey ?? '');
+      // Launch the assistant directly. No delayed prompt can fall through into a shell
+      // when Claude is missing or exits before its interactive interface is ready.
+      const terminal = vscode.window.createTerminal({ name: 'ERD Studio SQLMesh Sync', cwd: this.workspaceRoot,
+        shellPath: 'claude', shellArgs: [...(skipPermissions ? ['--dangerously-skip-permissions'] : []), prompt] });
+      terminal.show();
+      return;
+    }
     const terminal = vscode.window.createTerminal({
       name: 'ERD Studio Sync',
       cwd: this.workspaceRoot,

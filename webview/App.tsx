@@ -233,6 +233,10 @@ function EditorCanvas() {
         case 'syncPlanGenerated':
           setSyncPlanGenerated(msg.payload);
           break;
+        case 'sqlmeshLogicalSyncApplied':
+          useEditorStore.getState().clearSyncSelections();
+          useEditorStore.getState().setSyncMode(false);
+          break;
         case 'error':
           useEditorStore.getState().recordError('extension', msg.payload.message);
           setError(msg.payload.message, msg.payload.kind);

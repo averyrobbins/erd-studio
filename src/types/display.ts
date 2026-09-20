@@ -69,7 +69,7 @@ export interface DisplayColumn {
  * author's assertion; the manifest is a compiled copy of that assertion; a bare
  * source file proves only that the model exists.
  */
-export type PhysicalColumnSource = 'catalog' | 'yml' | 'manifest' | 'file' | 'sqlmesh-declared' | 'sqlmesh-inferred';
+export type PhysicalColumnSource = 'catalog' | 'yml' | 'manifest' | 'file' | 'sqlmesh-declared' | 'sqlmesh-inferred' | 'sqlmesh-observed';
 
 /** Where a physical model's shape came from. */
 export interface PhysicalProvenance {
@@ -81,6 +81,7 @@ export interface PhysicalProvenance {
 
 /** Model ready for webview display. */
 export interface DisplayModel {
+  warehouse?: import('./project').WarehouseModelObservation;
   qualifiedName?: string;
   columnsKnown?: boolean;
   name: string;
@@ -131,7 +132,7 @@ export interface DisplayRelationship {
 
 /** Domain ready for webview rendering. */
 export interface DisplayDomain {
-  integration?: { provider: 'dbt' | 'sqlmesh'; status: 'missing' | 'ready' | 'stale' | 'invalid'; generatedAt?: string; diagnostics: string[] };
+  integration?: { provider: 'dbt' | 'sqlmesh'; status: 'missing' | 'ready' | 'stale' | 'invalid'; generatedAt?: string; diagnostics: string[]; warehouse?: { environment: string; observedAt: string; observed: number; total: number } };
   identifierCaseSensitive?: boolean;
   schemaVersion: number;
   domain: string;

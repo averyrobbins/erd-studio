@@ -1,3 +1,4 @@
+import { SQLMESH_SYNC_INSTRUCTIONS } from './sqlmeshSync';
 /**
  * HarnessService — generates AI coding assistant configuration files.
  *
@@ -19,7 +20,7 @@ import * as path from 'path';
 // ---------------------------------------------------------------------------
 
 /** Version of the harness content. Bump when SCHEMA_CONTENT or generators change. */
-export const HARNESS_VERSION = '18';
+export const HARNESS_VERSION = '19';
 
 const VERSION_MARKER_PREFIX = '<!-- erd-studio-harness:';
 const VERSION_MARKER_SUFFIX = ' -->';
@@ -758,10 +759,12 @@ export class HarnessService {
     if (this.provider === 'sqlmesh') {
       const logicalGuide = SCHEMA_CONTENT.split('## Physical Stage (Read-Only)')[0];
       const content = `${logicalGuide}
-## SQLMesh integration (first draft)
+## SQLMesh integration
 
 The Physical view reads .erd-studio/sqlmesh.json, a generated source-metadata export.
-It is not an observation of deployed warehouse tables. Do not edit the export.
+Optional warehouse observations are separate from source metadata. Inspect SQLMesh Warehouse
+reads a selected DuckDB environment without deploying. Source-only columns are retained;
+observed types take precedence. Check model observation status and timestamp. Do not edit the export.
 Use ERD Studio: Refresh Project Metadata to regenerate it in a trusted workspace.
 The exporter executes project configuration/macros but never plans or applies changes.
 
@@ -775,10 +778,11 @@ field := customer_id) audit convention supplies FK edges in this draft. Unfilter
 unique_values / unique_combination_of_columns supply uniqueness metadata.
 Lineage, grain and references are not enforced foreign keys.
 
-SQLMesh sync plans, automated source edits, warehouse observation and domain execution
-are not implemented in this draft. Do not execute an old dbt sync plan in this project.
-When explicitly asked to implement SQLMesh models, edit native MODEL / @model definitions
-and audits, preserve their existing logic, validate locally and review a development plan.
+Native sync prepares .erd-studio/.sync-plan.json. Physical ground truth applies to the
+logical design through the editor as one undoable edit. Logical ground truth prepares
+AI-assisted SQL source edits. Use one direction per plan; v5 domains are required.
+${SQLMESH_SYNC_INSTRUCTIONS.map((instruction, i) => `${i + 1}. ${instruction}`).join('\n')}
+
 Never apply a plan as part of viewing or refreshing a diagram.
 
 ${buildVersionMarker()}
@@ -858,7 +862,7 @@ ${buildVersionMarker()}
       if (target.id === 'claude') {
         // SYNC.md — progressive context loading for sync plan execution
         const syncPath = path.join(dir, 'SYNC.md');
-        fs.writeFileSync(syncPath, applySemanticDir(this.provider === 'sqlmesh' ? 'SQLMesh sync execution is not available in this draft. Do not execute dbt sync plans.\n' : generateSyncGuide(), this.semanticDir), 'utf-8');
+        fs.writeFileSync(syncPath, applySemanticDir(this.provider === 'sqlmesh' ? SQLMESH_SYNC_INSTRUCTIONS.join('\n\n') + '\n' : generateSyncGuide(), this.semanticDir), 'utf-8');
 
         // enforce-skill.sh — PreToolUse hook that blocks first .erd-studio edit
         // per session so Claude loads the /erd-studio skill before making changes

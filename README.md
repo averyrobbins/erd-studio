@@ -51,13 +51,14 @@ The **Physical** view is the lower half of the diagram, and it has no file of it
 
 Each model shows where its shape came from, so a `varchar` on the canvas is never a guess: types are read from the warehouse when the catalog is there, otherwise from the `data_type:` you wrote, otherwise left blank rather than invented. A greyed-out model means it is genuinely not in your dbt project, not that you have not run dbt lately. And the edges are the tests you already run — `relationships` for the links, `unique` for the cardinality — so the canvas shows what dbt enforces rather than a second copy that can drift. Nothing is ever written to disk.
 
-### Reading SQLMesh projects (development preview)
+### SQLMesh projects (development preview)
 
-This branch adds native SQLMesh model import, a Physical view of declared/inferred
-source metadata, and logical-to-physical comparison. A small Python exporter runs
-only when you request **Refresh Project Metadata**; reading a saved diagram needs
-no Python process. SQLMesh sync, warehouse introspection, and domain execution are
-still deferred. This preview is available from source, not the published extension.
+This branch adds native SQLMesh import, Physical comparison, deterministic sync to
+logical models, and AI-assisted SQL source edits. A Python exporter runs only on an
+explicit metadata refresh or **Inspect SQLMesh Warehouse (DuckDB)**. Inspection is
+read-only and environment-aware; deployment is always separate. Saved diagrams and
+MCP reads need no Python process. This preview is available from source, not the
+published extension. Remote warehouses and full dbt parity remain future work.
 See the [setup guide and limitations](integrations/sqlmesh/README.md).
 
 ## Get started

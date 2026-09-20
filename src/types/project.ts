@@ -32,7 +32,7 @@ export interface ProjectRelationship {
 }
 
 export interface SqlmeshSnapshot {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   provider: 'sqlmesh';
   generatedAt: string;
   sqlmeshVersion: string;
@@ -43,4 +43,19 @@ export interface SqlmeshSnapshot {
   diagnostics: string[];
   /** Relative paths and hashes; used to detect edits AND deleted input files. */
   inputs: Record<string, string>;
+  warehouse?: WarehouseObservation | null;
+}
+
+export interface WarehouseModelObservation {
+  id: string;
+  status: 'observed' | 'not-deployed' | 'unavailable' | 'unsupported';
+  relation: string | null;
+  columns: ProjectColumn[];
+  diagnostic?: string;
+}
+
+export interface WarehouseObservation {
+  environment: string;
+  observedAt: string;
+  models: WarehouseModelObservation[];
 }

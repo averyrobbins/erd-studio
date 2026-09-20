@@ -82,6 +82,11 @@
         "category": "ERD Studio"
       },
       {
+        "command": "erdStudio.inspectSqlmeshWarehouse",
+        "title": "Inspect SQLMesh Warehouse (DuckDB)",
+        "category": "ERD Studio"
+      },
+      {
         "command": "erdStudio.renameDomain",
         "title": "Rename Semantic Domain",
         "category": "ERD Studio"
@@ -421,6 +426,11 @@
           "type": "string",
           "default": "",
           "description": "Optional Python configuration object name for the SQLMesh exporter."
+        },
+        "erdStudio.sqlmesh.environment": {
+          "type": "string",
+          "default": "prod",
+          "description": "Deployed SQLMesh environment to inspect with Inspect SQLMesh Warehouse. Inspection is read-only and supports local DuckDB files."
         }
       }
     }

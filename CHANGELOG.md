@@ -16,8 +16,12 @@ heading — `## Unreleased — 1.0.0` — and the workflow releases exactly that
   through the project's Python environment, import models, and compare logical diagrams
   with declared/inferred SQLMesh schemas. Qualified identities, source provenance,
   staleness diagnostics, a single-column FK audit convention, native AI instructions,
-  and the read-only MCP `list_project_models` tool are included. Automated SQLMesh sync,
-  warehouse introspection and domain execution are deferred. See the
+  and the read-only MCP `list_project_models` tool are included. Native sync now
+  applies selected metadata to v5 logical models in one undoable edit, or prepares
+  guarded AI source-edit plans. Optional read-only DuckDB inspection resolves deployed
+  environment relations with explicit observation provenance. Also fixes reversed
+  stage selection in the sync modal. Domain execution and remote warehouses remain
+  deferred. See the
   [SQLMesh setup guide](integrations/sqlmesh/README.md).
 
 ## 1.0.5 — 2026-09-20

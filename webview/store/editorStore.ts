@@ -174,7 +174,7 @@ export interface EditorState {
   /** Whether the manifest is stale (source files newer than manifest). */
   manifestStale: boolean;
   /** Info about the last generated sync plan, or null. */
-  syncPlanGenerated: { filePath: string; totalActions: number } | null;
+  syncPlanGenerated: { filePath: string; totalActions: number; direction?: 'metadata-to-logical' | 'logical-to-source' } | null;
   /** Set of "modelName:columnName" keys for columns involved in selected edges. */
   highlightedColumns: Set<string>;
   /** Set of model IDs with columns expanded. */
@@ -303,7 +303,7 @@ export interface EditorActions {
   /** Set manifest staleness flag. */
   setManifestStale: (stale: boolean) => void;
   /** Set sync plan generation result. */
-  setSyncPlanGenerated: (info: { filePath: string; totalActions: number } | null) => void;
+  setSyncPlanGenerated: (info: { filePath: string; totalActions: number; direction?: 'metadata-to-logical' | 'logical-to-source' } | null) => void;
   /** Set highlighted columns (for edge click). */
   setHighlightedColumns: (columns: Set<string>) => void;
   /** Expand all listed model IDs (sets allExpanded mode). */
@@ -548,12 +548,12 @@ export const useEditorStore = create<EditorState & EditorActions>()((set) => ({
   setDiscrepancyReport: (report) => set({ discrepancyReport: report }),
   setSyncMode: (active) => set({ syncMode: active, syncPlanGenerated: null }),
   setSyncSelection: (key, choice) =>
-    set((state) => ({ syncSelections: { ...state.syncSelections, [key]: choice } })),
+    set((state) => ({ syncSelections: { ...state.syncSelections, [key]: choice }, syncPlanGenerated: null })),
   setSyncSelectionBulk: (keys, choice) =>
     set((state) => {
       const next = { ...state.syncSelections };
       for (const key of keys) next[key] = choice;
-      return { syncSelections: next };
+      return { syncSelections: next, syncPlanGenerated: null };
     }),
   clearSyncSelections: () => set({ syncSelections: {}, syncPlanGenerated: null }),
   setManifestStale: (stale) => set({ manifestStale: stale }),

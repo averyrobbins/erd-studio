@@ -36,6 +36,7 @@ const SOURCE_NAME: Record<PhysicalColumnSource, string> = {
   manifest: 'dbt manifest',
   'sqlmesh-declared': 'SQLMesh declarations (not warehouse observation)',
   'sqlmesh-inferred': 'SQLMesh inference (not warehouse observation)',
+  'sqlmesh-observed': 'DuckDB warehouse observation, with source-only columns retained',
   file: '.sql file only',
 };
 
@@ -308,6 +309,11 @@ export function DetailPanel() {
       {/* Metadata */}
       <div className="detail-panel__section">
         <div className="detail-panel__metadata">
+          {model.warehouse && <div className="detail-panel__metadata-row">
+            <span className="detail-panel__label">Warehouse</span>
+            <span className="detail-panel__value">{model.warehouse.status}{model.warehouse.relation && `: ${model.warehouse.relation}`}
+              {model.warehouse.diagnostic && ` — ${model.warehouse.diagnostic}`}</span>
+          </div>}
           {model.qualifiedName && (
             <div className="detail-panel__metadata-row">
               <span className="detail-panel__label">SQLMesh</span>

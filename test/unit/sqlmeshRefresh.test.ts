@@ -12,8 +12,8 @@ it('passes paths and SQLMesh options as literal arguments without a shell', asyn
   const exporter = path.join(root, 'mock exporter.js');
   fs.writeFileSync(exporter, 'console.log(JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2)}))');
   const gateway = 'local; $(exit 1)';
-  const result = await refreshSqlmesh({ root, exporter, semanticDir: 'docs/erd', python: process.execPath, gateway, config: 'config_test' });
-  expect(JSON.parse(result)).toEqual({ cwd: root, args: ['--project', root, '--semantic-dir', 'docs/erd', '--gateway', gateway, '--config', 'config_test'] });
+  const result = await refreshSqlmesh({ root, exporter, semanticDir: 'docs/erd', python: process.execPath, gateway, config: 'config_test', environment: 'dev;literal' });
+  expect(JSON.parse(result)).toEqual({ cwd: root, args: ['--project', root, '--semantic-dir', 'docs/erd', '--gateway', gateway, '--config', 'config_test', '--environment', 'dev;literal'] });
 });
 
 it('reports exporter stderr without replacing the existing artifact', async () => {

@@ -48,6 +48,35 @@ describe('SQLMesh project detection', () => {
 });
 
 describe('SQLMesh metadata adapter', () => {
+  it('merges v2 observations without losing source-only columns or treating unavailable relations as absent', async () => {
+    editArtifact(s => {
+      s.schemaVersion = 2;
+      s.warehouse = { environment: 'dev', observedAt: '2026-09-20T12:00:00Z', models: s.models.map((m: any) => ({
+        id: m.id, status: m.name === 'dim_customer' ? 'observed' : 'unavailable',
+        relation: m.name === 'dim_customer' ? '"memory"."analytics__dev"."dim_customer"' : null,
+        columns: m.name === 'dim_customer' ? [{ name: 'customer_id', dataType: 'BIGINT', description: '' }, { name: 'warehouse_only', dataType: 'TEXT', description: '' }] : [],
+      })) };
+    });
+    const physical = adapter.buildPhysical(domain(), await adapter.load());
+    expect(physical.integration?.warehouse).toMatchObject({ environment: 'dev', observed: 1, total: 7 });
+    const customer = physical.models.find(m => m.name === 'dim_customer')!;
+    expect(customer.columns.map(c => c.name)).toEqual(['customer_id', 'name', 'warehouse_only']);
+    expect(customer.columns[0].dataType).toBe('BIGINT');
+    expect(customer.provenance?.types).toBe('sqlmesh-observed');
+    const order = physical.models.find(m => m.name === 'fct_order')!;
+    expect(order.existsInProject).toBe(true);
+    expect(order.columns).toHaveLength(3);
+    expect(order.provenance?.types).toBe('sqlmesh-inferred');
+    expect(physical.relationships).toHaveLength(1);
+  });
+  it('rejects incomplete and malformed warehouse evidence', () => {
+    const s = JSON.parse(fs.readFileSync(adapter.artifactPath, 'utf8'));
+    s.schemaVersion = 2;
+    s.warehouse = { environment: 'dev', observedAt: '2026-09-20T12:00:00Z', models: [] };
+    expect(() => parseSqlmeshSnapshot(JSON.stringify(s))).toThrow('Incomplete');
+    s.warehouse.models = s.models.map((m: any) => ({ id: m.id, status: 'observed', relation: null, columns: [] }));
+    expect(() => parseSqlmeshSnapshot(JSON.stringify(s))).toThrow('Invalid warehouse');
+  });
   it('loads real exported metadata, identities, provenance, FK evidence and matching comparisons', async () => {
     const data = await adapter.load();
     expect(adapter.status).toBe('ready');
@@ -104,7 +133,7 @@ describe('SQLMesh metadata adapter', () => {
       (s: any) => { s.models[0].sourcePath = '/etc/passwd'; },
       (s: any) => { s.models.push(s.models[0]); },
       (s: any) => { s.relationships[0].toColumn = 'absent'; },
-      (s: any) => { s.schemaVersion = 2; },
+      (s: any) => { s.schemaVersion = 3; },
     ]) {
       const value = structuredClone(original); mutate(value);
       expect(() => parseSqlmeshSnapshot(JSON.stringify(value))).toThrow();
