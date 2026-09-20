@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { SqlmeshProjectAdapter, parseSqlmeshSnapshot, snapshotIntegrity, canonicalJson } from '../../src/services/sqlmeshAdapter';
+import { SqlmeshProjectAdapter, parseSqlmeshSnapshot, snapshotIntegrity, canonicalJson, sqlmeshInputFiles } from '../../src/services/sqlmeshAdapter';
 import { detectProjectProvider, resolveProjectRoot } from '../../src/services/projectDetection';
 import { DomainService } from '../../src/services/domainService';
 import { LayerService } from '../../src/services/layerService';
@@ -146,6 +146,32 @@ describe('SQLMesh metadata adapter', () => {
     expect(physical.relationships).toEqual([]);
     const logical = { ...physical, stage: 'logical' as const, models: physical.models.map(m => ({ ...m, columns: m.columns.filter(c => c.name !== 'CUSTOMER_ID') })) };
     expect(compare(logical, physical).models[0].columns.some(c => c.name === 'CUSTOMER_ID' && c.status === 'missing')).toBe(true);
+  });
+  it('lists exactly the files the exporter fingerprints, including its symlink rules', () => {
+    // Mirror of test_input_files_agree_with_the_editor_on_symlinks in test_export.py.
+    const baseline = sqlmeshInputFiles(root);
+    expect(baseline).toEqual(Object.keys(JSON.parse(fs.readFileSync(adapter.artifactPath, 'utf8')).inputs).sort());
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'erd-mesh-outside-'));
+    try {
+      fs.writeFileSync(path.join(outside, 'external.sql'), 'SELECT 1');
+      fs.mkdirSync(path.join(outside, 'linked_dir'));
+      fs.writeFileSync(path.join(outside, 'linked_dir', 'hidden_model.sql'), 'SELECT 2');
+      fs.symlinkSync(path.join(root, 'models', 'dim_customer.sql'), path.join(root, 'models', 'inside_link.sql'));
+      fs.symlinkSync(path.join(outside, 'external.sql'), path.join(root, 'models', 'outside_link.sql'));
+      fs.symlinkSync(path.join(outside, 'linked_dir'), path.join(root, 'models', 'dir_link'));
+      fs.symlinkSync(path.join(root, 'models', 'fct_order.sql'), path.join(root, 'models', 'dangling.sql'));
+      fs.unlinkSync(path.join(root, 'models', 'fct_order.sql'));
+      const listed = sqlmeshInputFiles(root);
+      expect(listed).toContain('models/inside_link.sql');
+      expect(listed).not.toContain('models/outside_link.sql');
+      expect(listed.some(f => f.startsWith('models/dir_link'))).toBe(false);
+      expect(listed).not.toContain('models/dangling.sql');
+      expect(listed).not.toContain('models/fct_order.sql');
+      // The in-project link is one more input than the export knows about: stale, not an error.
+      adapter.invalidate();
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
   it('marks changed, added and removed source inputs stale', async () => {
     await adapter.load();

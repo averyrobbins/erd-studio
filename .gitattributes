@@ -1,0 +1,5 @@
+# The SQLMesh fixture's checked-in export (.erd-studio/sqlmesh.json) records the
+# SHA-256 of every source file in that project. A CRLF checkout would change those
+# bytes and make every JavaScript test see the export as stale, so these files are
+# always checked out with LF regardless of core.autocrlf.
+test/fixtures/sqlmesh-project/** text eol=lf

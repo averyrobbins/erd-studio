@@ -121,6 +121,50 @@ export function parseSqlmeshSnapshot(raw: string): SqlmeshSnapshot {
   return s as unknown as SqlmeshSnapshot;
 }
 
+const INPUT_DIRS = ['models', 'macros', 'audits', 'seeds', 'external_models'];
+const INPUT_ROOT_FILES = ['config.py', 'config.yaml', 'config.yml', 'schema.yaml', 'external_models.yaml'];
+const INPUT_SUFFIX = /\.(sql|py|yaml|yml|csv)$/;
+
+/**
+ * The project files whose bytes the exporter fingerprints, as POSIX paths
+ * relative to `root`, sorted. Mirror of `input_files` in
+ * `integrations/sqlmesh/export.py`: the two must list exactly the same files
+ * or every export reads as stale. Hidden directories are skipped; a symlink to
+ * a file is an input when its target lies inside the project and is skipped
+ * when it points outside (an artifact must never make the editor read outside
+ * the workspace); a symlink to a directory is never descended into.
+ */
+export function sqlmeshInputFiles(root: string, semanticDir = '.erd-studio'): string[] {
+  const realRoot = fs.realpathSync(root);
+  const insideRoot = (file: string): boolean => {
+    const rel = path.relative(realRoot, fs.realpathSync(file));
+    return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+  };
+  const files: string[] = [];
+  const visit = (dir: string): void => {
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const file = path.join(dir, entry.name);
+      if (entry.isDirectory()) { if (!entry.name.startsWith('.')) visit(file); continue; }
+      if (!INPUT_SUFFIX.test(entry.name)) continue;
+      let isFile = entry.isFile();
+      if (entry.isSymbolicLink()) {
+        try { isFile = fs.statSync(file).isFile() && insideRoot(file); } catch { isFile = false; }
+      }
+      if (isFile) files.push(path.relative(root, file).split(path.sep).join('/'));
+    }
+  };
+  for (const d of INPUT_DIRS) visit(path.join(root, d));
+  for (const f of [...INPUT_ROOT_FILES, `${semanticDir}/sqlmesh-bindings.json`]) {
+    try {
+      const abs = path.join(root, f);
+      if (fs.statSync(abs).isFile() && (!fs.lstatSync(abs).isSymbolicLink() || insideRoot(abs))) files.push(f);
+    } catch { /* absent */ }
+  }
+  return files.sort();
+}
+
 function emptyMetadata(): ProjectMetadata {
   return {
     manifest: { models: new Map(), relationshipTests: [], uniqueColumns: new Map(), compositeUniqueGroups: new Map(), disabledModels: new Set() },
@@ -225,27 +269,10 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
   }
 
   private inputsChanged(inputs: Record<string, string>): boolean {
-    const files = new Set<string>();
-    const visit = (dir: string): void => {
-      if (!fs.existsSync(dir)) return;
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const file = path.join(dir, entry.name);
-        if (entry.isDirectory() && !entry.name.startsWith('.')) visit(file);
-        else if (entry.isFile() && /\.(sql|py|yaml|yml|csv)$/.test(entry.name)) files.add(path.relative(this.root, file).split(path.sep).join('/'));
-      }
-    };
-    for (const d of ['models', 'macros', 'audits', 'seeds', 'external_models']) visit(path.join(this.root, d));
-    for (const f of ['config.py', 'config.yaml', 'config.yml', 'schema.yaml', 'external_models.yaml', `${this.semanticDir}/sqlmesh-bindings.json`]) {
-      if (fs.existsSync(path.join(this.root, f))) files.add(f);
-    }
-    if (files.size !== Object.keys(inputs).length) return true;
+    const files = sqlmeshInputFiles(this.root, this.semanticDir);
+    if (files.length !== Object.keys(inputs).length) return true;
     for (const file of files) {
-      const abs = path.join(this.root, file);
-      // Never follow an input symlink out of the workspace when inspecting an artifact.
-      const real = fs.realpathSync(abs);
-      const rel = path.relative(fs.realpathSync(this.root), real);
-      if (rel.startsWith('..') || path.isAbsolute(rel)) return true;
-      if (createHash('sha256').update(fs.readFileSync(abs)).digest('hex') !== inputs[file]) return true;
+      if (createHash('sha256').update(fs.readFileSync(path.join(this.root, file))).digest('hex') !== inputs[file]) return true;
     }
     return false;
   }

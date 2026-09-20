@@ -60,6 +60,27 @@ class ExportTest(unittest.TestCase):
         self.assertEqual(exporter.canonical_json({"b": "\u00e9\U0001f600\x7f", "a": [1, None, True]}),
                          '{"a":[1,null,true],"b":"\\u00e9\\ud83d\\ude00\\u007f"}')
 
+    def test_input_files_agree_with_the_editor_on_symlinks(self):
+        import os
+        outside = Path(tempfile.mkdtemp())
+        try:
+            (outside / "external.sql").write_text("SELECT 1")
+            (outside / "linked_dir").mkdir()
+            (outside / "linked_dir" / "hidden_model.sql").write_text("SELECT 2")
+            os.symlink(self.root / "models" / "dim_customer.sql", self.root / "models" / "inside_link.sql")
+            os.symlink(outside / "external.sql", self.root / "models" / "outside_link.sql")
+            os.symlink(outside / "linked_dir", self.root / "models" / "dir_link")
+            os.symlink(self.root / "models" / "fct_order.sql", self.root / "models" / "dangling.sql")
+            os.unlink(self.root / "models" / "fct_order.sql")
+            listed = {p.relative_to(self.root).as_posix() for p in exporter.input_files(self.root, self.semantic)}
+            self.assertIn("models/inside_link.sql", listed)          # a symlink to a project file is an input
+            self.assertNotIn("models/outside_link.sql", listed)      # never read outside the project
+            self.assertFalse(any(f.startswith("models/dir_link") for f in listed))  # directory symlinks are not descended
+            self.assertNotIn("models/dangling.sql", listed)          # a broken link is not a file
+            self.assertNotIn("models/fct_order.sql", listed)
+        finally:
+            shutil.rmtree(outside)
+
     def test_aliases_survive_added_models_and_explicit_bindings(self):
         old = {m["id"]: m["name"] for m in self.export()["models"]}
         (self.root / "models/new.sql").write_text("MODEL (name elsewhere.dim_customer); SELECT 2::INT AS id")

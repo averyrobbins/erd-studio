@@ -17,18 +17,39 @@ import tempfile
 
 
 def input_files(root: Path, semantic: Path) -> list[Path]:
+    """The project files whose bytes are fingerprinted. Mirror of `sqlmeshInputFiles` in
+    src/services/sqlmeshAdapter.ts: the two must list exactly the same files or every
+    export reads as stale in the editor. Hidden directories are skipped; a symlink to a
+    file counts when its target is inside the project and is skipped when it points
+    outside; a symlink to a directory is never descended into."""
+    real_root = root.resolve()
+
+    def is_input(file: Path) -> bool:
+        if not file.is_file():
+            return False
+        if file.is_symlink():
+            try:
+                return file.resolve().is_relative_to(real_root) and file.resolve() != real_root
+            except OSError:
+                return False
+        return True
+
     files = set()
     for name in ("config.py", "config.yaml", "config.yml", "external_models.yaml", "schema.yaml"):
         file = root / name
-        if file.is_file():
+        if is_input(file):
             files.add(file)
     for directory in ("models", "macros", "audits", "seeds", "external_models"):
-        for file in (root / directory).rglob("*"):
-            if (file.is_file() and file.suffix in (".sql", ".py", ".yaml", ".yml", ".csv")
-                    and not any(part.startswith(".") for part in file.relative_to(root / directory).parts[:-1])):
-                files.add(file)
+        # os.walk rather than rglob: whether rglob descends into directory symlinks
+        # changed in Python 3.13, and the editor never does.
+        for parent, dirs, names in os.walk(root / directory, followlinks=False):
+            dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+            for name in names:
+                file = Path(parent) / name
+                if file.suffix in (".sql", ".py", ".yaml", ".yml", ".csv") and is_input(file):
+                    files.add(file)
     binding_file = semantic / "sqlmesh-bindings.json"
-    if binding_file.exists():
+    if is_input(binding_file):
         files.add(binding_file)
     return sorted(files)
 
