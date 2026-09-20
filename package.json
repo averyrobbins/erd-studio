@@ -429,6 +429,12 @@
           "type": "string",
           "default": "prod",
           "description": "Deployed SQLMesh environment to inspect with Inspect SQLMesh Warehouse. Inspection is read-only and supports local DuckDB files."
+        },
+        "erdStudio.sqlmesh.exportTimeoutSeconds": {
+          "type": "number",
+          "default": 600,
+          "minimum": 30,
+          "description": "Seconds to allow Refresh Project Metadata / Inspect SQLMesh Warehouse before the exporter is stopped. Loading a large SQLMesh project and inferring every model's columns can take several minutes; the progress notification can also be cancelled."
         }
       }
     }

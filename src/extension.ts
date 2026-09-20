@@ -24,7 +24,7 @@ import { getErdStudioSetting } from './services/configService';
 import { detectProjectProvider, resolveProjectRoot } from './services/projectDetection';
 import { DbtProjectAdapter } from './services/projectAdapter';
 import { SqlmeshProjectAdapter } from './services/sqlmeshAdapter';
-import { refreshSqlmesh } from './services/sqlmeshRefresh';
+import { refreshSqlmesh, exportTimeoutMs } from './services/sqlmeshRefresh';
 import { readDbtProjectConfig } from './services/dbtProjectConfig';
 import { ModelLibraryTreeProvider, type ModelLibraryNode } from './providers/ModelLibraryTreeProvider';
 import { DOMAIN_EDITOR_VIEW_TYPE, hasOpenDomainCanvas, saveAllAndReload } from './services/recoveryService';
@@ -1071,12 +1071,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         try {
           await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
-            title: 'Exporting SQLMesh metadata...', cancellable: false }, async () => {
+            title: inspectWarehouse === true ? 'Inspecting SQLMesh warehouse...' : 'Exporting SQLMesh metadata...', cancellable: true }, async (_progress, token) => {
+            // Cancel kills the exporter; it writes its artifact atomically at the
+            // very end, so a cancelled or timed-out run leaves the previous export intact.
+            const controller = new AbortController();
+            token.onCancellationRequested(() => controller.abort());
             await refreshSqlmesh({ root: workspaceRoot, semanticDir,
               exporter: path.join(context.extensionUri.fsPath, 'dist', 'sqlmesh_export.py'),
               python: getErdStudioSetting('sqlmesh.pythonPath', ''),
               gateway: getErdStudioSetting('sqlmesh.gateway', ''), config: getErdStudioSetting('sqlmesh.config', ''),
               environment: inspectWarehouse === true ? (getErdStudioSetting('sqlmesh.environment', 'prod') || 'prod') : undefined,
+              timeoutMs: exportTimeoutMs(getErdStudioSetting<number>('sqlmesh.exportTimeoutSeconds', 600)),
+              signal: controller.signal,
             });
             projectAdapter.invalidate();
             await projectAdapter.load();

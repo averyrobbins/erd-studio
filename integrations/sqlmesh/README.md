@@ -25,8 +25,12 @@ Alternatively, use the source workflow below.
 3. Use your project's Python environment with SQLMesh installed. Set
    **User Settings → `erdStudio.sqlmesh.pythonPath`** to its Python executable.
    Otherwise the extension tries project `.venv`, then `python3` (`python` on
-   Windows). Optional workspace settings: `erdStudio.sqlmesh.gateway` and
-   `erdStudio.sqlmesh.config` (a Python configuration object name).
+   Windows). Optional workspace settings: `erdStudio.sqlmesh.gateway`,
+   `erdStudio.sqlmesh.config` (a Python configuration object name) and
+   `erdStudio.sqlmesh.exportTimeoutSeconds` (default 600, minimum 30 — loading a
+   large project and inferring every model's columns can take minutes). The
+   progress notification can be cancelled; a cancelled or timed-out export
+   leaves the previous `sqlmesh.json` untouched.
 4. Run **ERD Studio: Refresh Project Metadata**. This explicitly executes trusted
    project configuration/macros and produces `.erd-studio/sqlmesh.json`. It never
    invokes SQLMesh plan, apply, run, model evaluation, or audit execution. SQLMesh
