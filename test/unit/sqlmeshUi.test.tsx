@@ -58,3 +58,15 @@ it('labels environment observations, partial coverage and source-only columns', 
   expect(screen.getByRole('status').textContent).toContain('dev, 1/3 models observed');
   expect(screen.getByRole('status').textContent).toContain('source-only columns are retained');
 });
+
+it('says why a whole inspection failed instead of reporting 0 of N observed', () => {
+  const domain = structuredClone(useEditorStore.getState().domain!);
+  domain.integration!.warehouse = { environment: 'prdo', observedAt: '2026-09-20T10:00:00Z', observed: 0, total: 3,
+    diagnostic: "Environment 'prdo' was not found in SQLMesh state; check erdStudio.sqlmesh.environment or deploy that environment first" };
+  useEditorStore.setState({ domain });
+  render(<PhysicalSourceNotice />);
+  const text = screen.getByRole('status').textContent ?? '';
+  expect(text).toContain("inspection of prdo failed");
+  expect(text).toContain("'prdo' was not found");
+  expect(text).not.toContain('0/3 models observed');
+});

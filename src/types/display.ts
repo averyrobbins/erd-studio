@@ -138,7 +138,7 @@ export interface DisplayRelationship {
 
 /** Domain ready for webview rendering. */
 export interface DisplayDomain {
-  integration?: { provider: 'dbt' | 'sqlmesh'; status: 'missing' | 'ready' | 'stale' | 'invalid'; generatedAt?: string; diagnostics: string[]; warehouse?: { environment: string; observedAt: string; observed: number; total: number } };
+  integration?: { provider: 'dbt' | 'sqlmesh'; status: 'missing' | 'ready' | 'stale' | 'invalid'; generatedAt?: string; diagnostics: string[]; warehouse?: { environment: string; observedAt: string; observed: number; total: number; diagnostic?: string } };
   identifierCaseSensitive?: boolean;
   schemaVersion: number;
   domain: string;

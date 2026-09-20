@@ -74,9 +74,21 @@ disable_anonymized_analytics: true
         self.assertEqual(result['models'][0]['columns'][0]['dataType'], 'TEXT')
         self.assertEqual(result['warehouse']['models'][0]['columns'], [{'name': 'id', 'dataType': 'INT', 'description': ''}])
 
-    def test_missing_environment_is_not_deployed(self):
+    def test_missing_environment_is_reported_not_read_as_undeployed(self):
         self.deploy()
-        self.assertEqual(self.inspect('missing')['warehouse']['models'][0]['status'], 'not-deployed')
+        warehouse = self.inspect('missing')['warehouse']
+        self.assertEqual(warehouse['models'][0]['status'], 'unavailable')
+        self.assertIn("'missing' was not found", warehouse['diagnostic'])
+        self.assertEqual(warehouse['models'][0]['diagnostic'], warehouse['diagnostic'])
+
+    def test_undeployed_model_in_an_existing_environment_is_not_deployed(self):
+        self.deploy()
+        (self.root / 'models/later.sql').write_text('MODEL (name demo.later, kind FULL); SELECT 2::INT AS id;')
+        warehouse = self.inspect()['warehouse']
+        self.assertNotIn('diagnostic', warehouse)
+        statuses = {m['id']: m['status'] for m in warehouse['models']}
+        self.assertEqual(statuses['"warehouse"."demo"."orders"'], 'observed')
+        self.assertEqual(statuses['"warehouse"."demo"."later"'], 'not-deployed')
 
     def test_missing_database_is_never_created(self):
         result = self.inspect()

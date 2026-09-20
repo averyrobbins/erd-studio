@@ -61,7 +61,8 @@ export function parseSqlmeshSnapshot(raw: string): SqlmeshSnapshot {
   if (s.warehouse != null) {
     const w = s.warehouse;
     if (s.schemaVersion !== 2 || !object(w) || typeof w.environment !== 'string' || !w.environment
-      || typeof w.observedAt !== 'string' || !Number.isFinite(Date.parse(w.observedAt)) || !Array.isArray(w.models)) throw new Error('Invalid warehouse observation.');
+      || typeof w.observedAt !== 'string' || !Number.isFinite(Date.parse(w.observedAt)) || !Array.isArray(w.models)
+      || !(w.diagnostic === undefined || typeof w.diagnostic === 'string')) throw new Error('Invalid warehouse observation.');
     const seen = new Set<string>();
     for (const m of w.models) {
       if (!object(m) || typeof m.id !== 'string' || !ids.has(m.id) || seen.has(m.id)
@@ -109,7 +110,8 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
     const w = this.snapshot?.warehouse;
     return { provider: 'sqlmesh', status: this.status, generatedAt: this.generatedAt, diagnostics: this.diagnostics,
       ...(w ? { warehouse: { environment: w.environment, observedAt: w.observedAt,
-        observed: w.models.filter(m => m.status === 'observed').length, total: w.models.length } } : {}) };
+        observed: w.models.filter(m => m.status === 'observed').length, total: w.models.length,
+        ...(w.diagnostic ? { diagnostic: w.diagnostic } : {}) } } : {}) };
   }
   getModel(name: string): ProjectModel | undefined { return this.snapshot?.models.find(m => m.name === name); }
   /**

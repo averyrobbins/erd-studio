@@ -127,7 +127,11 @@ still execute as trusted Python, so this is not a sandbox for arbitrary project 
 Exports retain source columns separately from observations. Observed column types
 win in Physical; the column list is the union, retaining source-only columns.
 The notice and model details show environment, time, coverage, relation and status:
-`observed`, `not-deployed`, `unavailable`, or `unsupported`. Failed inspection does
+`observed`, `not-deployed`, `unavailable`, or `unsupported`. `not-deployed` is only
+reported for a model absent from an environment that exists; an environment that is
+not in SQLMesh state (a typo in `erdStudio.sqlmesh.environment`, or one never
+deployed), a locked or missing database and unreadable state all mark every model
+`unavailable` and put the reason in the notice. Failed inspection does
 not make a source model disappear or imply its columns should be deleted. Embedded
 and external models have no managed relation inspected by this workflow. Edges
 remain source audit declarations, not observed/enforced warehouse constraints.

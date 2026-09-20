@@ -111,9 +111,13 @@ def inspect_warehouse(context, root: Path, environment: str, models: list[dict])
             raise InspectionUnavailable("No readable SQLMesh state; deploy the project separately before inspecting")
         state.get_versions()  # Fail on incompatible state; never migrate it.
         env = state.get_environment(environment)
-        if env and (not env.finalized_ts or (env.expiration_ts and env.expiration_ts <= now_timestamp())):
+        if env is None:
+            # A typo in the environment setting must not read as "nothing is deployed".
+            raise InspectionUnavailable(f"Environment '{environment}' was not found in SQLMesh state; "
+                                        "check erdStudio.sqlmesh.environment or deploy that environment first")
+        if not env.finalized_ts or (env.expiration_ts and env.expiration_ts <= now_timestamp()):
             raise InspectionUnavailable("Environment is expired or its deployment is not finalized; retry after deployment")
-        promoted = {s.name: s for s in env.promoted_snapshots} if env else {}
+        promoted = {s.name: s for s in env.promoted_snapshots}
         for model in models:
             observation = {"id": model["id"], "status": "not-deployed", "relation": None, "columns": []}
             snapshot = promoted.get(model["id"])
@@ -134,6 +138,9 @@ def inspect_warehouse(context, root: Path, environment: str, models: list[dict])
     except Exception as error:
         # Avoid persisting connection strings, credentials or raw driver errors in artifacts.
         diagnostic = str(error) if isinstance(error, InspectionUnavailable) else "Warehouse/state metadata unavailable (database lock, missing file, permissions or incompatible SQLMesh state)"
+        # The whole inspection failed, so the reason is stated once at the top
+        # level (where the canvas notice shows it) as well as on every model.
+        result["diagnostic"] = diagnostic
         result["models"] = [{"id": m["id"], "status": "unavailable", "relation": None,
                              "columns": [], "diagnostic": diagnostic} for m in models]
     finally:

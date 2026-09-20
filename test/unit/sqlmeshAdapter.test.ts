@@ -76,6 +76,22 @@ describe('SQLMesh metadata adapter', () => {
     expect(() => parseSqlmeshSnapshot(JSON.stringify(s))).toThrow('Incomplete');
     s.warehouse.models = s.models.map((m: any) => ({ id: m.id, status: 'observed', relation: null, columns: [] }));
     expect(() => parseSqlmeshSnapshot(JSON.stringify(s))).toThrow('Invalid warehouse');
+    s.warehouse.models = s.models.map((m: any) => ({ id: m.id, status: 'unavailable', relation: null, columns: [], diagnostic: 'x' }));
+    s.warehouse.diagnostic = 42;
+    expect(() => parseSqlmeshSnapshot(JSON.stringify(s))).toThrow('Invalid warehouse');
+  });
+  it('surfaces a whole-inspection failure on the integration summary', async () => {
+    const reason = "Environment 'prdo' was not found in SQLMesh state; check erdStudio.sqlmesh.environment or deploy that environment first";
+    editArtifact(s => {
+      s.schemaVersion = 2;
+      s.warehouse = { environment: 'prdo', observedAt: '2026-09-20T12:00:00Z', diagnostic: reason,
+        models: s.models.map((m: any) => ({ id: m.id, status: 'unavailable', relation: null, columns: [], diagnostic: reason })) };
+    });
+    const physical = adapter.buildPhysical(domain(), await adapter.load());
+    expect(physical.integration?.warehouse).toMatchObject({ environment: 'prdo', observed: 0, total: 7, diagnostic: reason });
+    // Source columns are untouched by a failed inspection.
+    expect(physical.models.find(m => m.name === 'fct_order')?.columns).toHaveLength(3);
+    expect(physical.models.find(m => m.name === 'fct_order')?.provenance?.types).toBe('sqlmesh-inferred');
   });
   it('loads real exported metadata, identities, provenance, FK evidence and matching comparisons', async () => {
     const data = await adapter.load();

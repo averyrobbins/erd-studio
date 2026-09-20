@@ -66,4 +66,6 @@ export interface WarehouseObservation {
   environment: string;
   observedAt: string;
   models: WarehouseModelObservation[];
+  /** Set when the whole inspection failed (unknown environment, locked file, unreadable state); every model is then `unavailable` with the same text. */
+  diagnostic?: string;
 }

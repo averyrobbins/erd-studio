@@ -36,7 +36,9 @@ export const PhysicalSourceNotice: React.FC = () => {
       <div className="physical-source-notice__text">
         SQLMesh metadata — {integration.status}.
         {integration.warehouse
-          ? ` Warehouse: ${integration.warehouse.environment}, ${integration.warehouse.observed}/${integration.warehouse.total} models observed at ${integration.warehouse.observedAt}. Observed types take precedence; source-only columns are retained. Relationships come from source audits.`
+          ? integration.warehouse.diagnostic
+            ? ` Warehouse inspection of ${integration.warehouse.environment} failed at ${integration.warehouse.observedAt}: ${integration.warehouse.diagnostic} Types shown are declared or inferred from source.`
+            : ` Warehouse: ${integration.warehouse.environment}, ${integration.warehouse.observed}/${integration.warehouse.total} models observed at ${integration.warehouse.observedAt}. Observed types take precedence; source-only columns are retained. Relationships come from source audits.`
           : ' Types are declared or inferred. Use Inspect SQLMesh Warehouse (DuckDB) for deployed types.'}
         {integration.generatedAt && ` Exported ${integration.generatedAt}.`}
         {integration.diagnostics.length > 0 && <details><summary>{integration.diagnostics.length} diagnostic(s)</summary>
