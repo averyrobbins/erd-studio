@@ -364,6 +364,12 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       /** The target stage from the last discrepancy comparison (used to refresh after stub toggle). */
       lastCompareAgainst?: Stage;
       sqlmeshPlan?: { plan: SqlmeshSyncPlan; text: string };
+      /**
+       * Bumped by every `handleSwitchStage` call for this panel. A switch whose
+       * payload finishes building after a newer switch started is dropped, so
+       * `activeStage` always describes the reply the webview actually kept.
+       */
+      stageSwitchSeq?: number;
     }
   >();
 
@@ -3470,6 +3476,13 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
    * on the `stageData` reply so the webview can discard a reply for a stage it
    * no longer wants (e.g. Alt+1 pressed while a slow physical load is in flight).
    * Host-initiated switches (tree view, watcher refresh) carry no token.
+   *
+   * `panel.activeStage` is committed only once a payload for the target stage
+   * has actually been built. The webview changes stage only when it receives
+   * `stageData`, so a build that throws (a SQLMesh project with no export yet,
+   * a domain file mid-write) must leave the host on the stage the webview is
+   * still showing — otherwise the physical-stage guard rejects every edit on a
+   * canvas that still looks logical, and no tab click can undo it.
    */
   private async handleSwitchStage(
     panelKey: string,
@@ -3481,9 +3494,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     try {
       const panel = this.openPanels.get(panelKey);
       if (!panel) return;
-
-      // Update tracked stage
-      panel.activeStage = targetStage;
+      const seq = (panel.stageSwitchSeq = (panel.stageSwitchSeq ?? 0) + 1);
 
       const manifest = await this.loadProjectManifest();
       const ymlData = await this.loadProjectDeclarations();
@@ -3497,22 +3508,27 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
         unifiedDomain.viewConfig.positions = { ...(unifiedDomain.viewConfig.positions ?? {}), ...computed };
       }
 
-      const reply = requestId !== undefined ? { requestId } : {};
+      let payload: DisplayDomain;
       if (targetStage === 'physical') {
-        // Physical stage is derived from the dbt project itself, enriched by the
+        // Physical stage is derived from the project itself, enriched by the
         // manifest and the warehouse catalog when either has been generated.
-        const physicalDomain = this.buildProjectPhysicalDomain(unifiedDomain, ymlData, manifest, catalog);
+        payload = this.buildProjectPhysicalDomain(unifiedDomain, ymlData, manifest, catalog);
         const layerConfig = this.layerService.getLayer(unifiedDomain.layer);
         if (layerConfig) {
-          physicalDomain.layerConfig = layerConfig;
+          payload.layerConfig = layerConfig;
         }
-        this.post(webview, { type: 'stageData', payload: physicalDomain, ...reply });
       } else {
         // Logical — extract from unified file
         const domain = this.domainService.getDomainStage(document.uri.fsPath);
-        const displayDomain = this.buildDisplayDomain(domain, manifest, ymlData, unifiedDomain.viewConfig, unifiedDomain.stubColumns);
-        this.post(webview, { type: 'stageData', payload: displayDomain, ...reply });
+        payload = this.buildDisplayDomain(domain, manifest, ymlData, unifiedDomain.viewConfig, unifiedDomain.stubColumns);
       }
+
+      // A newer switch for this panel started while this one was building:
+      // its reply is the one the webview will keep, so this one says nothing.
+      if (this.openPanels.get(panelKey) !== panel || panel.stageSwitchSeq !== seq) return;
+      panel.activeStage = targetStage;
+      const reply = requestId !== undefined ? { requestId } : {};
+      this.post(webview, { type: 'stageData', payload, ...reply });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[SemanticEditorProvider] Stage switch failed: ${message}`);
