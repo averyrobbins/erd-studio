@@ -8,6 +8,18 @@ The `Unreleased` heading below is renamed to the released version by the deploy 
 Releases are patch bumps by default. To ship a minor or major version, write it into the
 heading — `## Unreleased — 1.0.0` — and the workflow releases exactly that.
 
+## Unreleased
+
+### Added
+
+- **SQLMesh integration preview:** detect native projects, explicitly export metadata
+  through the project's Python environment, import models, and compare logical diagrams
+  with declared/inferred SQLMesh schemas. Qualified identities, source provenance,
+  staleness diagnostics, a single-column FK audit convention, native AI instructions,
+  and the read-only MCP `list_project_models` tool are included. Automated SQLMesh sync,
+  warehouse introspection and domain execution are deferred. See the
+  [SQLMesh setup guide](integrations/sqlmesh/README.md).
+
 ## 1.0.5 — 2026-09-20
 
 ### Fixed

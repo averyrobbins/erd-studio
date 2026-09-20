@@ -21,6 +21,10 @@ import { MigrationService, migrateLegacySemanticDir } from './services/migration
 import { YmlParserService } from './services/ymlParserService';
 import { CatalogService } from './services/catalogService';
 import { getErdStudioSetting } from './services/configService';
+import { detectProjectProvider, resolveProjectRoot } from './services/projectDetection';
+import { DbtProjectAdapter } from './services/projectAdapter';
+import { SqlmeshProjectAdapter } from './services/sqlmeshAdapter';
+import { refreshSqlmesh } from './services/sqlmeshRefresh';
 import { readDbtProjectConfig } from './services/dbtProjectConfig';
 import { ModelLibraryTreeProvider, type ModelLibraryNode } from './providers/ModelLibraryTreeProvider';
 import { DOMAIN_EDITOR_VIEW_TYPE, hasOpenDomainCanvas, saveAllAndReload } from './services/recoveryService';
@@ -129,15 +133,17 @@ function findDbtProjectRoot(): string | undefined {
   if (!workspaceFolders || workspaceFolders.length === 0) {
     return undefined;
   }
-  return resolveDbtProjectRoot(
+  return resolveProjectRoot(
     workspaceFolders.map(f => f.uri.fsPath),
     getErdStudioSetting('projectPath', ''),
+    getErdStudioSetting('provider', 'auto'),
+    getErdStudioSetting('semanticDir', '.erd-studio'),
   );
 }
 
 const NO_PROJECT_MESSAGE =
-  'ERD Studio: No dbt project found. Open a folder containing dbt_project.yml, ' +
-  'or set erdStudio.projectPath to the dbt project folder.';
+  'ERD Studio: No supported project found. Open a dbt or SQLMesh project, ' +
+  'or set erdStudio.projectPath and erdStudio.provider.';
 
 /**
  * Commands added after the `dbtSemantic.*` → `erdStudio.*` rename. They never
@@ -403,9 +409,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return;
   }
 
-  console.log(`ERD Studio: Found dbt project at ${workspaceRoot}`);
+  console.log(`ERD Studio: Found project at ${workspaceRoot}`);
 
   const semanticDir = getErdStudioSetting('semanticDir', '.erd-studio');
+  const projectProvider = detectProjectProvider(workspaceRoot, getErdStudioSetting('provider', 'auto'), semanticDir) ?? 'dbt';
 
   // v0.6.44 moved the default data directory from erd-studio/ to .erd-studio/.
   // Rename legacy folders in place before any service reads from disk so
@@ -439,6 +446,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // source of the types the warehouse actually has. Shares the one dbtConfig
   // read above; never re-read dbt_project.yml for a second consumer.
   const catalogService = new CatalogService({ dbtConfig });
+  const projectAdapter = projectProvider === 'sqlmesh'
+    ? new SqlmeshProjectAdapter(workspaceRoot, semanticDir)
+    : new DbtProjectAdapter(workspaceRoot, domainService, manifestService, ymlParserService, catalogService);
   const templateService = new TemplateService();
   // Status bar item shown while selectors.yml is out of sync (skipped writes).
   // Hidden as soon as a regenerate succeeds.
@@ -499,6 +509,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       },
     },
   );
+  selectorsService.setEnabled(projectProvider === 'dbt');
   const legacyTagCleanupService = new LegacyTagCleanupService(workspaceRoot);
 
   // Ensure selectors.yml exists and is up to date at activation time so a
@@ -539,6 +550,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     selectorsService,
     logicalModelService,
   );
+  editorProvider.setProjectAdapter(projectAdapter);
   editorProviderForFeedback = editorProvider;
 
   // Report tracking is constructed here, before refreshContextKeys() is defined
@@ -593,11 +605,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // -------------------------------------------------------------------------
   const fileWatcherService = new FileWatcherService(workspaceRoot, semanticDir, dbtConfig);
 
+  if (projectProvider === 'sqlmesh') {
+    // Watch inputs and the inert export; never execute project code from a watcher.
+    const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(workspaceRoot,
+      `{${semanticDir}/sqlmesh*.json,config.py,config.yaml,config.yml,external_models.yaml,schema.yaml,{models,macros,audits,seeds,external_models}/**/*.{sql,py,yaml,yml,csv}}`));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const changed = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => { projectAdapter.invalidate(); void editorProvider.refreshAllOpenDomains(); }, 300);
+    };
+    context.subscriptions.push(watcher, watcher.onDidChange(changed), watcher.onDidCreate(changed), watcher.onDidDelete(changed),
+      { dispose() { clearTimeout(timer); } });
+  }
+
   // Manifest changed → refresh open editors
   let manifestRetryTimeout: ReturnType<typeof setTimeout> | undefined;
   let manifestChangeGen = 0;
   const manifestChangedSubscription = fileWatcherService.onManifestChanged(
     async () => {
+      if (projectProvider !== 'dbt') return;
       const gen = ++manifestChangeGen;
       manifestService.invalidate();
       await editorProvider.refreshAllOpenDomains();
@@ -651,6 +677,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // handler above already announces itself; a second toast for the same command
   // would say nothing new.
   const catalogChangedSubscription = fileWatcherService.onCatalogChanged(async () => {
+    if (projectProvider !== 'dbt') return;
     catalogService.invalidate();
     await editorProvider.refreshAllOpenDomains();
   });
@@ -699,6 +726,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     treeProvider.refresh();
     modelLibraryProvider.refresh();
     refreshContextKeys();
+    if (projectProvider !== 'dbt') return;
     const subject = uris.length === 1
       ? 'Domain file deleted.'
       : `${uris.length} domain files deleted.`;
@@ -741,6 +769,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // dbt schema .yml changed → refresh physical stage
   const dbtYmlChangedSubscription = fileWatcherService.onDbtYmlChanged(
     async () => {
+      if (projectProvider !== 'dbt') return;
       ymlParserService.invalidate();
       await editorProvider.refreshAllOpenDomains();
     },
@@ -748,6 +777,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // dbt_project.yml path config changed → suggest window reload
   const projectChangedSubscription = fileWatcherService.onProjectConfigChanged(() => {
+    if (projectProvider !== 'dbt') return;
     void vscode.window.showWarningMessage(
       'dbt_project.yml path configuration changed (target-path / model-paths / seed-paths / snapshot-paths). A window reload is needed to pick up the new paths.',
       'Reload Window',
@@ -763,6 +793,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const activationSettings = {
     semanticDir,
     projectPath: getErdStudioSetting('projectPath', ''),
+    provider: getErdStudioSetting('provider', 'auto'),
   };
   const configChangedSubscription = vscode.workspace.onDidChangeConfiguration((e) => {
     if (!e.affectsConfiguration('erdStudio') && !e.affectsConfiguration('dbtSemantic')) {
@@ -772,7 +803,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const nextProjectPath = getErdStudioSetting('projectPath', '');
     if (
       nextSemanticDir === activationSettings.semanticDir &&
-      nextProjectPath === activationSettings.projectPath
+      nextProjectPath === activationSettings.projectPath &&
+      getErdStudioSetting('provider', 'auto') === activationSettings.provider
     ) {
       return;
     }
@@ -1099,6 +1131,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       },
     ),
     vscode.commands.registerCommand('erdStudio.refreshManifest', async () => {
+      if (projectAdapter instanceof SqlmeshProjectAdapter) {
+        if (!vscode.workspace.isTrusted) {
+          void vscode.window.showWarningMessage('Trust this workspace before executing SQLMesh project configuration. Saved metadata can still be viewed.');
+          return;
+        }
+        try {
+          await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
+            title: 'Exporting SQLMesh metadata...', cancellable: false }, async () => {
+            await refreshSqlmesh({ root: workspaceRoot, semanticDir,
+              exporter: path.join(context.extensionUri.fsPath, 'dist', 'sqlmesh_export.py'),
+              python: getErdStudioSetting('sqlmesh.pythonPath', ''),
+              gateway: getErdStudioSetting('sqlmesh.gateway', ''), config: getErdStudioSetting('sqlmesh.config', ''),
+            });
+            projectAdapter.invalidate();
+            await projectAdapter.load();
+            if (projectAdapter.status !== 'ready') {
+              throw new Error(projectAdapter.diagnostics.join('\n') || 'SQLMesh metadata is not current. Retry refresh.');
+            }
+            await editorProvider.refreshAllOpenDomains();
+            void vscode.window.showInformationMessage('SQLMesh metadata refreshed. Graphs updated.');
+          });
+        } catch (error) {
+          void vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+        }
+        return;
+      }
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
@@ -1133,6 +1191,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Regenerate the root selectors.yml from current domain files.
     // Run a domain refresh in dbt with: dbt build --selector domain_{layer}_{domain}
     vscode.commands.registerCommand('erdStudio.syncDomainTags', async () => {
+      if (projectProvider === 'sqlmesh') {
+        void vscode.window.showInformationMessage('SQLMesh domain execution is not available in this first draft. Use explicit SQLMesh model selections.');
+        return;
+      }
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
@@ -1164,6 +1226,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // One-shot cleanup: strip legacy `domain:*` tags from every model YAML
     // left behind by the old SchemaTagService. Safe to run repeatedly.
     vscode.commands.registerCommand('erdStudio.stripLegacyDomainTags', async () => {
+      if (projectProvider !== 'dbt') return;
       const confirm = await vscode.window.showWarningMessage(
         'This will scan every .yml file under your dbt model-paths (default `models/`) and remove any `domain:*` tag from `config.tags` or top-level `tags` on each dbt model. ' +
           'Review and commit the changes as a single PR. Continue?',
@@ -1542,7 +1605,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand(
       'erdStudio.installCodingHarness',
       async () => {
-        const harnessService = new HarnessService(semanticDir);
+        const harnessService = new HarnessService(semanticDir, projectProvider);
         const existing = harnessService.detectExisting(workspaceRoot);
         const staleTargets = harnessService.detectStale(workspaceRoot);
         const staleIds = new Set(staleTargets.map(t => t.id));
@@ -1618,7 +1681,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // workspace when none are present. Never overwrite anything silently:
   // harness files (AGENTS.md in particular) can hold user content.
   {
-    const harnessService = new HarnessService(semanticDir);
+    const harnessService = new HarnessService(semanticDir, projectProvider);
     const existing = harnessService.detectExisting(workspaceRoot);
     const installedCount = [...existing.values()].filter(Boolean).length;
     const staleTargets = harnessService.detectStale(workspaceRoot);

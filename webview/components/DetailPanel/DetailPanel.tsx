@@ -34,6 +34,8 @@ const SOURCE_NAME: Record<PhysicalColumnSource, string> = {
   catalog: 'warehouse catalog',
   yml: 'your dbt .yml',
   manifest: 'dbt manifest',
+  'sqlmesh-declared': 'SQLMesh declarations (not warehouse observation)',
+  'sqlmesh-inferred': 'SQLMesh inference (not warehouse observation)',
   file: '.sql file only',
 };
 
@@ -306,6 +308,12 @@ export function DetailPanel() {
       {/* Metadata */}
       <div className="detail-panel__section">
         <div className="detail-panel__metadata">
+          {model.qualifiedName && (
+            <div className="detail-panel__metadata-row">
+              <span className="detail-panel__label">SQLMesh</span>
+              <span className="detail-panel__value" title={model.qualifiedName}>{model.qualifiedName}</span>
+            </div>
+          )}
           <div className="detail-panel__metadata-row">
             <span className="detail-panel__label">Schema</span>
             <span className="detail-panel__value">{model.schema || '—'}</span>

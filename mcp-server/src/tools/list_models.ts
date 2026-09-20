@@ -13,7 +13,7 @@ export const list_models = {
     inputSchema: {
       project_path: z
         .string()
-        .describe('Absolute path to the dbt project root.'),
+        .describe('Absolute path to the dbt or SQLMesh project root.'),
     },
     annotations: {
       readOnlyHint: true,

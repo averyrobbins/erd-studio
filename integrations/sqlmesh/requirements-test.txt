@@ -1,0 +1,4 @@
+# Known-good development/test pair. Users run the exporter in their project environment.
+sqlmesh==0.236.1
+sqlglot==30.8.0
+duckdb==1.5.5

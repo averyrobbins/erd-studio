@@ -27,8 +27,8 @@ import { normaliseName } from './nameUtils';
  * case-insensitive on most warehouses); raw names are preserved on the
  * resulting discrepancy entries for display.
  */
-function relationshipKey(r: { fromModel: string; fromColumn: string; toModel: string; toColumn: string }): string {
-  return [r.fromModel, r.fromColumn, r.toModel, r.toColumn].map(normaliseName).join('|');
+function relationshipKey(r: { fromModel: string; fromColumn: string; toModel: string; toColumn: string }, key = normaliseName): string {
+  return [r.fromModel, r.fromColumn, r.toModel, r.toColumn].map(key).join('|');
 }
 
 /**
@@ -250,7 +250,7 @@ function dataTypesMatch(a: string | undefined, b: string | undefined): boolean {
  * This one is automatic and fires only when there is no evidence at all.
  */
 function hasNoColumnEvidence(m: DisplayModel): boolean {
-  return m.columns.length === 0
+  return m.columnsKnown === false || m.columns.length === 0
     && m.provenance?.columns.length === 1
     && m.provenance.columns[0] === 'file';
 }
@@ -267,6 +267,7 @@ function compareColumns(
   sourceModel: DisplayModel,
   targetModel: DisplayModel,
   stubColumns: boolean,
+  normaliseName: (name: string) => string,
 ): ColumnDiscrepancy[] {
   // Checked on BOTH sides: physical is the default comparison SOURCE, and an
   // empty source column list makes every logical column report as 'missing'.
@@ -333,13 +334,15 @@ function compareColumns(
 function compareRelationships(
   sourceRels: DisplayRelationship[],
   targetRels: DisplayRelationship[],
+  normaliseName: (name: string) => string,
 ): RelationshipDiscrepancy[] {
-  const targetMap = new Map(targetRels.map((r) => [relationshipKey(r), r]));
+  const relKey = (r: DisplayRelationship) => relationshipKey(r, normaliseName);
+  const targetMap = new Map(targetRels.map((r) => [relKey(r), r]));
   const visited = new Set<string>();
   const result: RelationshipDiscrepancy[] = [];
 
   for (const rel of sourceRels) {
-    const key = relationshipKey(rel);
+    const key = relKey(rel);
     const targetRel = targetMap.get(key);
     visited.add(key);
 
@@ -375,7 +378,7 @@ function compareRelationships(
 
   // Relationships in target but not source
   for (const rel of targetRels) {
-    if (!visited.has(relationshipKey(rel))) {
+    if (!visited.has(relKey(rel))) {
       result.push({
         fromModel: rel.fromModel,
         fromColumn: rel.fromColumn,
@@ -407,6 +410,8 @@ export function compare(
   target: DisplayDomain,
   stubColumnModels: ReadonlySet<string> = new Set(),
 ): DiscrepancyReport {
+  const normaliseName = source.identifierCaseSensitive || target.identifierCaseSensitive
+    ? (name: string) => name : (name: string) => name.trim().toLowerCase();
   // Models the dbt project does not have are dropped from BOTH sides before
   // anything is compared. The physical stage now emits them so the canvas can
   // ghost them, but a phantom carries no shape to compare — including it would
@@ -446,7 +451,7 @@ export function compare(
       extraColumns += model.columns.length;
     } else {
       const isStub = stubModelKeys.has(modelKey);
-      const columns = compareColumns(model, targetModel, isStub);
+      const columns = compareColumns(model, targetModel, isStub, normaliseName);
       models.push({ name: model.name, status: 'matched', columns });
 
       for (const col of columns) {
@@ -476,7 +481,7 @@ export function compare(
     }
   }
 
-  const relationships = compareRelationships(source.relationships, target.relationships);
+  const relationships = compareRelationships(source.relationships, target.relationships, normaliseName);
 
   return {
     domain: source.domain,

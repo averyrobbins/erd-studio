@@ -17,6 +17,7 @@ import * as vscode from 'vscode';
  * they are passed to {@link getErdStudioSetting}.
  */
 export const USER_SCOPED_SETTINGS: ReadonlySet<string> = new Set([
+  'sqlmesh.pythonPath',
   'feedback.aiAssist',
   'feedback.endpoint',
   'feedback.model',

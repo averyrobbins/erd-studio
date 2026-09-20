@@ -116,6 +116,8 @@ type LoadMalformed = { status: 'malformed'; detail: string };
 type LoadResult = LoadOk | LoadMalformed;
 
 export class SelectorsService {
+  private enabled = true;
+  setEnabled(enabled: boolean): void { this.enabled = enabled; }
   private debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
@@ -130,6 +132,7 @@ export class SelectorsService {
    * one write. Safe to call from any mutation handler.
    */
   scheduleRegenerate(delayMs = 250): void {
+    if (!this.enabled) return;
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
@@ -170,6 +173,7 @@ export class SelectorsService {
    *   - `selectors:` key is missing or its value isn't a list.
    */
   regenerate(): RegenerateResult {
+    if (!this.enabled) return { status: 'noop', filePath: path.join(this.workspaceRoot, SELECTORS_FILENAME) };
     const filePath = path.join(this.workspaceRoot, SELECTORS_FILENAME);
 
     // Skip #1: open with unsaved edits.

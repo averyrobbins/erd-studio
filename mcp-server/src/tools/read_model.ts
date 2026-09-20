@@ -13,7 +13,7 @@ export const read_model = {
     inputSchema: {
       project_path: z
         .string()
-        .describe('Absolute path to the dbt project root.'),
+        .describe('Absolute path to the dbt or SQLMesh project root.'),
       model_name: z
         .string()
         .describe('Logical model name (filename without .yml).'),

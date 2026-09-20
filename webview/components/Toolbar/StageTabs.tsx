@@ -22,7 +22,7 @@ import './StageTabs.css';
 
 const STAGE_LABELS: { stage: Stage; label: string; shortcut: string; tooltip: string }[] = [
   { stage: 'logical', label: 'Logical', shortcut: 'Alt+1', tooltip: 'Your design blueprint \u2014 the ideal data model' },
-  { stage: 'physical', label: 'Physical', shortcut: 'Alt+2', tooltip: "What's declared in your dbt .yml schema files \u2014 read-only" },
+  { stage: 'physical', label: 'Physical', shortcut: 'Alt+2', tooltip: 'Project metadata \u2014 read-only' },
 ];
 
 // ---------------------------------------------------------------------------

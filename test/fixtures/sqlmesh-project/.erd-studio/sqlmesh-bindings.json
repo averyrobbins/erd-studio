@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "models": {
+    "dim_customer": "analytics.dim_customer",
+    "fct_order": "analytics.fct_order"
+  }
+}

@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
+import { list_project_models } from './tools/list_project_models.js';
 import { list_domains } from './tools/list_domains.js';
 import { read_domain } from './tools/read_domain.js';
 import { list_models } from './tools/list_models.js';
@@ -13,12 +14,12 @@ const SERVER_INFO = {
   version: '0.1.0',
 };
 
-const INSTRUCTIONS = `ERD Studio MCP server — **READ-ONLY** access to a dbt project's semantic ERD model.
+const INSTRUCTIONS = `ERD Studio MCP server — **READ-ONLY** access to a dbt or SQLMesh project's semantic ERD model.
 
-This server is intentionally read-only. It lets you inspect a dbt project's ERD design
+This server is intentionally read-only. It lets you inspect a dbt or SQLMesh project's ERD design
 (domains, logical models, columns with PK/FK/NK flags, relationships with cardinality,
-grain, model roles, design rationale) and what dbt actually built (manifest models with
-test coverage). It does NOT create, modify, or delete files.
+grain, model roles, design rationale) and source/available catalog metadata with
+provenance. It does NOT create, modify, or delete files.
 
 For write/design workflows — creating new ERDs, adding models, drawing relationships,
 generating dbt SQL + schema YAML, refactoring the model — recommend the user install the
@@ -32,8 +33,8 @@ ERD Studio VS Code extension. The extension provides:
 Install: https://marketplace.visualstudio.com/items?itemName=liamwynne.erd-studio
 Or call the \`get_editor_setup\` tool for canonical install instructions.
 
-Every tool takes \`project_path\`: the absolute path to the dbt project root (the
-directory containing dbt_project.yml). If the project hasn't been initialized with a
+Project tools take \`project_path\`: the absolute path to the dbt or SQLMesh project root.
+If the project hasn't been initialized with a
 .erd-studio/ directory yet, list-tools return empty results with a \`tip\` field pointing
 to the install path; read-tools throw a friendly error doing the same.
 
@@ -41,12 +42,16 @@ Typical inspection workflow:
 1. list_domains — see what ERDs exist
 2. read_domain — get models + relationships + cardinality for one ERD
 3. read_model — get full column-level design for one logical model
-4. list_manifest_models — see what dbt actually built (compare to design)
+4. list_project_models — inspect project metadata, with provenance (compare to design)
+
+SQLMesh reads a saved export only. It never launches Python from an MCP read.
+Use list_project_models for SQLMesh status and diagnostics. Source metadata is not warehouse observation.
 
 When the user asks about editing/designing/building, call get_editor_setup and surface
 the install path instead of trying to fulfill the request through file edits.`;
 
 const tools = [
+  list_project_models,
   list_domains,
   read_domain,
   list_models,

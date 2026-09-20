@@ -1,0 +1,4 @@
+- name: raw.events
+  columns:
+    event_id: INT
+    customer_id: INT

@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/erd-studio-mcp.svg)](https://www.npmjs.com/package/erd-studio-mcp)
 [![License: PolyForm Shield](https://img.shields.io/badge/license-PolyForm%20Shield-blue.svg)](LICENSE)
 
-**MCP server for [ERD Studio](https://github.com/liam-machine/erd-studio)** — gives Claude, Cursor, Continue, Zed, or any [Model Context Protocol](https://modelcontextprotocol.io) client **read-only** access to your dbt project's semantic ERD model.
+**MCP server for [ERD Studio](https://github.com/liam-machine/erd-studio)** — gives Claude, Cursor, Continue, Zed, or any [Model Context Protocol](https://modelcontextprotocol.io) client **read-only** access to your dbt or SQLMesh project's semantic ERD model. SQLMesh support on this branch is a development preview; build it locally to try it.
 
 Once installed, your AI assistant can answer questions like:
 - *"What domains exist in this dbt project?"*
@@ -58,7 +58,7 @@ These editors support MCP via their respective config files. Use the same `comma
 
 ## Tools
 
-All tools take a `project_path` argument: the **absolute path** to the dbt project root (the directory containing `dbt_project.yml`). The project should also contain a `.erd-studio/` directory created by the [ERD Studio VS Code extension](https://marketplace.visualstudio.com/items?itemName=liamwynne.erd-studio).
+Project tools take a `project_path` argument: the **absolute path** to the dbt or SQLMesh project root. The project should also contain a `.erd-studio/` directory created by the [ERD Studio VS Code extension](https://marketplace.visualstudio.com/items?itemName=liamwynne.erd-studio). `get_editor_setup` needs no project path.
 
 | Tool | Returns |
 |---|---|
@@ -66,7 +66,8 @@ All tools take a `project_path` argument: the **absolute path** to the dbt proje
 | `read_domain` | Full domain: models + columns + relationships + cardinality + rationale. |
 | `list_models` | All logical model definitions from `.erd-studio/logical-models/*.yml`. |
 | `read_model` | Single logical model with column-level metadata, grain, SCD types, rationale. |
-| `list_manifest_models` | Models from `target/manifest.json` (what dbt actually built), with unique/relationship test coverage. Filter optional by `name_contains`. |
+| `list_project_models` | Available project models, columns, qualified SQLMesh IDs, relationships and provenance. SQLMesh includes snapshot status, timestamp and diagnostics. Optional `name_contains` filter and `provider: auto/dbt/sqlmesh` override. |
+| `list_manifest_models` | Legacy summary of the dbt manifest or SQLMesh export with counts and declared audit/test evidence. Prefer `list_project_models` for provenance and columns. |
 | `get_editor_setup` | Returns install instructions for the ERD Studio VS Code extension. Use this when the user wants to edit, design, or build (this MCP server is read-only). |
 
 All tools are read-only. If the project hasn't been initialized with a `.erd-studio/` directory yet, list-tools return empty results with a `tip` field pointing to the install path; read-tools throw a friendly error doing the same. Either way the AI naturally surfaces the extension install path to the user.
@@ -86,7 +87,7 @@ So when you ask the AI *"propose a column to add to `dim_customer`"*, it sees no
 ## Requirements
 
 - **Node.js ≥ 18**
-- A dbt project (containing `dbt_project.yml`)
+- A dbt project (`dbt_project.yml`) or native SQLMesh configuration/export
 - *(Optional but recommended)* The [ERD Studio VS Code extension](https://marketplace.visualstudio.com/items?itemName=liamwynne.erd-studio) for creating and editing ERDs visually. The MCP server reads the same files the extension writes.
 
 ## Without ERD Studio yet
@@ -100,6 +101,28 @@ If your dbt project doesn't have a `.erd-studio/` directory yet:
 The MCP server still works on uninitialized projects — `list_manifest_models` reads `target/manifest.json` directly, and the other tools return graceful "install the extension to start designing" tips. So you can install this MCP first to inspect what dbt has, then move to the extension for the design work.
 
 ## Source
+
+### Native SQLMesh preview
+
+Follow the [exporter setup](../integrations/sqlmesh/README.md) to produce
+`.erd-studio/sqlmesh.json`. MCP reads this artifact and never starts Python,
+executes project code, or inspects warehouse tables. Declared/inferred SQLMesh
+types are not observed warehouse schemas; audit declarations do not prove passing
+audits. Missing, stale or invalid snapshots are reported by `list_project_models`.
+
+From the repository root, run `npm ci`, then in `mcp-server/`:
+
+```sh
+npm ci
+npx tsc --noEmit -p tsconfig.json
+npm run build
+node test-smoke.mjs
+```
+
+Point your MCP client at `node /absolute/path/to/erd-studio/mcp-server/dist/index.js`
+to use the local draft. Unlike the extension, MCP currently assumes the default
+`.erd-studio` directory. For a mixed dbt/SQLMesh project, pass `provider: "sqlmesh"`
+to `list_project_models`; logical tools share the same design files.
 
 - Main repo: https://github.com/liam-machine/erd-studio
 - Server source: [`mcp-server/`](https://github.com/liam-machine/erd-studio/tree/main/mcp-server)

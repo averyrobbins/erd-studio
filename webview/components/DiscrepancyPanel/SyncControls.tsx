@@ -101,6 +101,7 @@ interface SyncFooterProps {
 }
 
 export const SyncFooter: React.FC<SyncFooterProps> = ({ totalKeys }) => {
+  const isSqlmesh = useEditorStore(s => s.domain?.integration?.provider === 'sqlmesh');
   const syncSelections = useEditorStore((s) => s.syncSelections);
   const syncPlanGenerated = useEditorStore((s) => s.syncPlanGenerated);
   const vscode = useVsCodeApi();
@@ -120,6 +121,8 @@ export const SyncFooter: React.FC<SyncFooterProps> = ({ totalKeys }) => {
   const handleLaunchClaude = useCallback(() => {
     vscode.postMessage({ type: 'launchClaudeSync' });
   }, [vscode]);
+
+  if (isSqlmesh) return <div className="disc-panel__sync-footer">SQLMesh comparison is available. Sync execution is not included in this draft.</div>;
 
   if (syncPlanGenerated) {
     return (
@@ -169,6 +172,7 @@ export const SyncFooter: React.FC<SyncFooterProps> = ({ totalKeys }) => {
 // ---------------------------------------------------------------------------
 
 export const StalenessWarning: React.FC = () => {
+  const isSqlmesh = useEditorStore(s => s.domain?.integration?.provider === 'sqlmesh');
   const manifestStale = useEditorStore((s) => s.manifestStale);
   const vscode = useVsCodeApi();
 
@@ -181,9 +185,9 @@ export const StalenessWarning: React.FC = () => {
   return (
     <div className="disc-panel__staleness">
       <span className="disc-panel__staleness-icon">⚠</span>
-      <span className="disc-panel__staleness-text">Manifest may be outdated</span>
+      <span className="disc-panel__staleness-text">{isSqlmesh ? 'SQLMesh metadata may be outdated' : 'Manifest may be outdated'}</span>
       <button className="disc-panel__staleness-btn" onClick={handleCompile}>
-        Run dbt compile
+        {isSqlmesh ? 'Refresh SQLMesh metadata' : 'Run dbt compile'}
       </button>
     </div>
   );

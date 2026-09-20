@@ -35,7 +35,8 @@ export interface ManifestModelPreview {
  * - 'manifest': model exists in compiled manifest only, no .yml file (Compiled)
  */
 export interface ExistingModelPreview extends ManifestModelPreview {
-  source: 'logical' | 'yml' | 'manifest';
+  source: 'logical' | 'yml' | 'manifest' | 'sqlmesh';
+  qualifiedName?: string;
   /** Relative file path showing where this model is defined (e.g. "models/silver/dim_customer.yml") */
   sourcePath: string;
 }
@@ -68,7 +69,7 @@ export interface DisplayColumn {
  * author's assertion; the manifest is a compiled copy of that assertion; a bare
  * source file proves only that the model exists.
  */
-export type PhysicalColumnSource = 'catalog' | 'yml' | 'manifest' | 'file';
+export type PhysicalColumnSource = 'catalog' | 'yml' | 'manifest' | 'file' | 'sqlmesh-declared' | 'sqlmesh-inferred';
 
 /** Where a physical model's shape came from. */
 export interface PhysicalProvenance {
@@ -80,6 +81,8 @@ export interface PhysicalProvenance {
 
 /** Model ready for webview display. */
 export interface DisplayModel {
+  qualifiedName?: string;
+  columnsKnown?: boolean;
   name: string;
   schema: string;
   description: string;
@@ -128,6 +131,8 @@ export interface DisplayRelationship {
 
 /** Domain ready for webview rendering. */
 export interface DisplayDomain {
+  integration?: { provider: 'dbt' | 'sqlmesh'; status: 'missing' | 'ready' | 'stale' | 'invalid'; generatedAt?: string; diagnostics: string[] };
+  identifierCaseSensitive?: boolean;
   schemaVersion: number;
   domain: string;
   layer: Layer;

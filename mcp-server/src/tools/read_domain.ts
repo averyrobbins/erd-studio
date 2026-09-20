@@ -12,11 +12,11 @@ export const read_domain = {
       'Read a full ERD domain by name + layer. Returns the logical stage: ' +
       'models with columns (data types, PK/FK/NK flags, SCD types), grain, model role, ' +
       'rationale, and the relationships drawn between them with cardinality. ' +
-      'This is the design source-of-truth. For what dbt actually built, see list_manifest_models.',
+      'This is the design source-of-truth. For available project metadata, see list_project_models.',
     inputSchema: {
       project_path: z
         .string()
-        .describe('Absolute path to the dbt project root.'),
+        .describe('Absolute path to the dbt or SQLMesh project root.'),
       layer: z
         .string()
         .describe('Layer name (e.g. "silver", "gold").'),

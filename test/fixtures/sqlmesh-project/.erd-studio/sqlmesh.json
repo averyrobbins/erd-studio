@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 1,
+  "provider": "sqlmesh",
+  "generatedAt": "2026-09-20T19:25:23.000955+00:00",
+  "sqlmeshVersion": "0.236.1",
+  "gateway": null,
+  "config": null,
+  "models": [
+    {
+      "id": "\"memory\".\"analytics\".\"dim_customer\"",
+      "name": "dim_customer",
+      "schema": "analytics",
+      "description": "One row per customer",
+      "dialect": "duckdb",
+      "kind": "FULL",
+      "sourcePath": "models/dim_customer.sql",
+      "columnsKnown": true,
+      "columnSource": "declared",
+      "columns": [
+        {
+          "name": "customer_id",
+          "dataType": "INT",
+          "description": "Customer key"
+        },
+        {
+          "name": "name",
+          "dataType": "TEXT",
+          "description": ""
+        }
+      ],
+      "uniqueKeys": [
+        [
+          "customer_id"
+        ]
+      ]
+    },
+    {
+      "id": "\"memory\".\"analytics\".\"fct_order\"",
+      "name": "fct_order",
+      "schema": "analytics",
+      "description": "",
+      "dialect": "duckdb",
+      "kind": "FULL",
+      "sourcePath": "models/fct_order.sql",
+      "columnsKnown": true,
+      "columnSource": "inferred",
+      "columns": [
+        {
+          "name": "order_id",
+          "dataType": "INT",
+          "description": ""
+        },
+        {
+          "name": "customer_id",
+          "dataType": "INT",
+          "description": ""
+        },
+        {
+          "name": "amount",
+          "dataType": "DECIMAL(10, 2)",
+          "description": ""
+        }
+      ],
+      "uniqueKeys": [
+        [
+          "order_id"
+        ]
+      ]
+    },
+    {
+      "id": "\"memory\".\"analytics\".\"generated\"",
+      "name": "analytics_generated_4d9ea43dea",
+      "schema": "analytics",
+      "description": "",
+      "dialect": "duckdb",
+      "kind": "VIEW",
+      "sourcePath": "models/python_models.py",
+      "columnsKnown": true,
+      "columnSource": "inferred",
+      "columns": [
+        {
+          "name": "id",
+          "dataType": "INT",
+          "description": ""
+        }
+      ],
+      "uniqueKeys": []
+    },
+    {
+      "id": "\"memory\".\"analytics\".\"python_model\"",
+      "name": "analytics_python_model_a849a5711c",
+      "schema": "analytics",
+      "description": "",
+      "dialect": "duckdb",
+      "kind": "FULL",
+      "sourcePath": "models/python_models.py",
+      "columnsKnown": true,
+      "columnSource": "declared",
+      "columns": [
+        {
+          "name": "id",
+          "dataType": "INT",
+          "description": ""
+        },
+        {
+          "name": "label",
+          "dataType": "TEXT",
+          "description": ""
+        }
+      ],
+      "uniqueKeys": []
+    },
+    {
+      "id": "\"memory\".\"analytics\".\"seed\"",
+      "name": "analytics_seed_eb7d326894",
+      "schema": "analytics",
+      "description": "",
+      "dialect": "duckdb",
+      "kind": "SEED",
+      "sourcePath": "models/seed.sql",
+      "columnsKnown": true,
+      "columnSource": "declared",
+      "columns": [
+        {
+          "name": "id",
+          "dataType": "INT",
+          "description": ""
+        },
+        {
+          "name": "label",
+          "dataType": "TEXT",
+          "description": ""
+        }
+      ],
+      "uniqueKeys": []
+    },
+    {
+      "id": "\"memory\".\"raw\".\"events\"",
+      "name": "raw_events_cb7835d1c1",
+      "schema": "raw",
+      "description": "",
+      "dialect": "duckdb",
+      "kind": "EXTERNAL",
+      "sourcePath": "external_models.yaml",
+      "columnsKnown": true,
+      "columnSource": "declared",
+      "columns": [
+        {
+          "name": "event_id",
+          "dataType": "INT",
+          "description": ""
+        },
+        {
+          "name": "customer_id",
+          "dataType": "INT",
+          "description": ""
+        }
+      ],
+      "uniqueKeys": []
+    },
+    {
+      "id": "\"memory\".\"support\".\"dim_customer\"",
+      "name": "support_dim_customer_e9041c3a1a",
+      "schema": "support",
+      "description": "",
+      "dialect": "duckdb",
+      "kind": "VIEW",
+      "sourcePath": "models/other_customer.sql",
+      "columnsKnown": true,
+      "columnSource": "inferred",
+      "columns": [
+        {
+          "name": "customer_id",
+          "dataType": "INT",
+          "description": ""
+        }
+      ],
+      "uniqueKeys": []
+    }
+  ],
+  "relationships": [
+    {
+      "fromId": "\"memory\".\"analytics\".\"fct_order\"",
+      "fromColumn": "customer_id",
+      "toId": "\"memory\".\"analytics\".\"dim_customer\"",
+      "toColumn": "customer_id",
+      "audit": "erd_relationship"
+    }
+  ],
+  "inputs": {
+    ".erd-studio/sqlmesh-bindings.json": "d62460667f6917ed69e5a8fa45c9db7e1dd30174532815ea449566474facf055",
+    "audits/erd_relationship.sql": "e4055e20fc0aafda733dd33ffc40aecb2af5b282250bd386aa2da2d5a2e12486",
+    "config.yaml": "44e6c47b205e7b85c2199e25d92a42b405967b2091c3c76e6b97c8d1f75f9803",
+    "external_models.yaml": "dfb19975694a4736b34c516397e9998d004dee7078bc533e2fab0322a446571e",
+    "models/dim_customer.sql": "85c345359940e624cf89d55c1127d769f8b1f84ca92d66758667daa5592d0103",
+    "models/disabled.sql": "d8e191d495478791a8651a57a6ba503d50c45765fbb95380f727f15dc28ffe1e",
+    "models/fct_order.sql": "b10ba8e8ca5fb7ac861f8db458144323104e66ca709c8f5b5af2d075487053cc",
+    "models/other_customer.sql": "082f4220a29205c12467cfb338431335f9692be301495ef7094fa86c3159e10a",
+    "models/python_models.py": "d0e643b345abced04816e0b920853863fe17a0c68b92331b4fe60c7ba814359d",
+    "models/seed.sql": "9fbfb86cbb670a104e7702129012794e5e556cb4b1f54187b4e1b28fa3a21296",
+    "seeds/items.csv": "eee7f302b58ae4c9cdb964a03fb1a138e64e2f15006b67fc5155b121de7cd4aa"
+  },
+  "diagnostics": []
+}

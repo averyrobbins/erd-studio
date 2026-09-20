@@ -88,6 +88,8 @@ export type ModelNodeData = {
    * off the logical canvas without a stage check.
    */
   provenance?: PhysicalProvenance;
+  /** False when project metadata could not resolve the model's column schema. */
+  columnsKnown?: boolean;
   /** Whether this model is in stub display mode (PK/NK columns only). */
   isStub: boolean;
   /** Per-model discrepancy data when a cross-stage comparison report is active. */

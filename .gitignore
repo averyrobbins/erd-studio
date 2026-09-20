@@ -16,3 +16,10 @@ dev-preview.html
 
 # Git worktrees (per-branch checkouts, not for tracking)
 .worktrees/
+
+# Local SQLMesh integration validation
+.venv*/
+__pycache__/
+.sqlmesh/
+test/fixtures/sqlmesh-project/.cache/
+test/fixtures/sqlmesh-project/logs/

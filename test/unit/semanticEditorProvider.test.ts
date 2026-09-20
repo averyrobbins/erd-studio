@@ -18,6 +18,7 @@ import { LayerService } from '../../src/services/layerService';
 import { LogicalModelService } from '../../src/services/logicalModelService';
 import { ManifestService } from '../../src/services/manifestService';
 import { YmlParserService } from '../../src/services/ymlParserService';
+import { SqlmeshProjectAdapter } from '../../src/services/sqlmeshAdapter';
 import { CatalogService } from '../../src/services/catalogService';
 import { TemplateService } from '../../src/services/templateService';
 import { SelectorsService } from '../../src/services/selectorsService';
@@ -827,5 +828,45 @@ describe('requestFeedbackDialog', () => {
     expect(provider.requestFeedbackDialog()).toBe(false);
 
     expect(posted(panel).length).toBe(before);
+  });
+});
+
+
+describe('native SQLMesh editor workflow', () => {
+  it('opens logical and physical views, imports models, compares, and blocks dbt sync execution', async () => {
+    fs.rmSync(root, { recursive: true });
+    fs.cpSync(path.join(REPO_ROOT, 'test/fixtures/sqlmesh-project'), root, { recursive: true });
+    const { provider } = buildProvider(root);
+    const adapter = new SqlmeshProjectAdapter(root);
+    provider.setProjectAdapter(adapter);
+    const file = path.join(root, '.erd-studio/silver/orders.json');
+    const doc = makeDoc(file);
+    const panel = vscode.createMockWebviewPanel();
+    await provider.resolveCustomTextEditor(doc as any, panel as any, {} as any);
+    panel._simulateMessage({ type: 'ready' });
+    await waitForType(panel, 'domainLoaded');
+    const initial = posted(panel).find(m => m.type === 'domainLoaded')!.payload;
+    expect(initial.integration.provider).toBe('sqlmesh');
+    const existing = initial.existingModels.find((m: any) => m.source === 'sqlmesh' && m.qualifiedName.includes('support'));
+    expect(existing.qualifiedName).toContain('support');
+    panel._simulateMessage({ type: 'addExistingModel', payload: { modelName: existing.name } });
+    await waitForType(panel, 'domainLoaded', 2);
+    expect(fs.existsSync(path.join(root, '.erd-studio/logical-models', existing.name + '.yml'))).toBe(true);
+    panel._simulateMessage({ type: 'switchStage', payload: { stage: 'physical' }, requestId: 41 });
+    await waitForType(panel, 'stageData');
+    const physical = posted(panel).filter(m => m.type === 'stageData').at(-1)!.payload;
+    expect(physical.readOnly).toBe(true);
+    expect(physical.models).toHaveLength(3);
+    expect(physical.relationships[0].cardinality).toBe('many-to-one');
+    panel._simulateMessage({ type: 'toggleDiscrepancy', payload: { enabled: true, compareAgainst: 'logical' } });
+    await waitForType(panel, 'discrepancyReport');
+    expect(posted(panel).find(m => m.type === 'discrepancyReport')!.payload.summary.dataTypeMismatches).toBe(0);
+    panel._simulateMessage({ type: 'generateSyncPlan', payload: { selections: {} } });
+    await waitForError(panel, /SQLMesh sync plans/);
+    panel._simulateMessage({ type: 'launchClaudeSync' });
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(vscode.window.terminals).toHaveLength(0);
+    expect(fs.existsSync(path.join(root, '.erd-studio/.sync-plan.json'))).toBe(false);
+    panel.dispose();
   });
 });

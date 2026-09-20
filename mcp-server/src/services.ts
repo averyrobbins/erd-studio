@@ -1,9 +1,14 @@
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { LayerService } from '../../src/services/layerService.js';
 import { LogicalModelService } from '../../src/services/logicalModelService.js';
 import { DomainService } from '../../src/services/domainService.js';
+import { SqlmeshProjectAdapter } from '../../src/services/sqlmeshAdapter.js';
+import { DbtProjectAdapter, type ProjectAdapter } from '../../src/services/projectAdapter.js';
+import { detectProjectProvider } from '../../src/services/projectDetection.js';
+import { YmlParserService } from '../../src/services/ymlParserService.js';
+import { CatalogService } from '../../src/services/catalogService.js';
+import { readDbtProjectConfig } from '../../src/services/dbtProjectConfig.js';
 import { ManifestService } from '../../src/services/manifestService.js';
 
 export interface Services {
@@ -13,29 +18,32 @@ export interface Services {
   logicalModelService: LogicalModelService;
   domainService: DomainService;
   manifestService: ManifestService;
+  projectAdapter: ProjectAdapter;
 }
 
 const SEMANTIC_DIR = '.erd-studio';
 
-export function resolveProjectPath(input: string): string {
+export function resolveProjectPath(input: string, provider = 'auto'): string {
   const resolved = path.resolve(input);
-  const dbtProjectFile = path.join(resolved, 'dbt_project.yml');
-  if (!fs.existsSync(dbtProjectFile)) {
+  if (!detectProjectProvider(resolved, provider)) {
     throw new Error(
-      `Not a dbt project: ${resolved} (missing dbt_project.yml). ` +
-      `Pass the absolute path to the directory containing dbt_project.yml.`,
+      `Not a dbt or SQLMesh project: ${resolved}. Pass its absolute root path.`,
     );
   }
   return resolved;
 }
 
-export function buildServices(projectPathInput: string): Services {
-  const projectPath = resolveProjectPath(projectPathInput);
+export function buildServices(projectPathInput: string, provider = 'auto'): Services {
+  const projectPath = resolveProjectPath(projectPathInput, provider);
   const layerService = new LayerService(projectPath, SEMANTIC_DIR);
   const logicalModelService = new LogicalModelService(projectPath, SEMANTIC_DIR);
   const domainService = new DomainService(layerService);
   domainService.setLogicalModelService(logicalModelService);
-  const manifestService = new ManifestService();
+  const dbtConfig = readDbtProjectConfig(projectPath);
+  const manifestService = new ManifestService({ dbtConfig });
+  const projectAdapter = detectProjectProvider(projectPath, provider) === 'sqlmesh'
+    ? new SqlmeshProjectAdapter(projectPath, SEMANTIC_DIR)
+    : new DbtProjectAdapter(projectPath, domainService, manifestService, new YmlParserService({ dbtConfig }), new CatalogService({ dbtConfig }));
   return {
     projectPath,
     semanticDir: SEMANTIC_DIR,
@@ -43,5 +51,6 @@ export function buildServices(projectPathInput: string): Services {
     logicalModelService,
     domainService,
     manifestService,
+    projectAdapter,
   };
 }

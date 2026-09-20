@@ -57,7 +57,7 @@ const SCHEMA_BADGE: Record<string, string> = {
  * it, and those two are worth telling apart.
  */
 const GHOST_REASON_TITLE: Record<NonNullable<ModelNodeData['ghostReason']>, string> = {
-  'not-in-project': 'not found in your dbt project (no .sql/.py/.csv file, no schema .yml entry, no manifest node)',
+  'not-in-project': 'not found in the current project metadata',
   'disabled': 'disabled in dbt (enabled: false), so ref() to it does not compile',
   'missing-in-comparison': 'not present in the stage being compared against',
 };
@@ -73,6 +73,8 @@ const SOURCE_LABEL: Record<PhysicalColumnSource, string> = {
   yml: 'YML',
   manifest: 'DBT',
   file: 'SQL',
+  'sqlmesh-declared': 'MESH',
+  'sqlmesh-inferred': 'MESH',
 };
 
 /** How each source is named in prose (chip tooltip). */
@@ -81,6 +83,8 @@ const SOURCE_PHRASE: Record<PhysicalColumnSource, string> = {
   yml: 'your dbt .yml',
   manifest: 'the dbt manifest',
   file: 'the source file only',
+  'sqlmesh-declared': 'declared SQLMesh metadata (not warehouse observation)',
+  'sqlmesh-inferred': 'SQLMesh query inference (not warehouse observation)',
 };
 
 /** Join a contributor list as prose: "a", "a and b", "a, b and c". */
@@ -668,7 +672,7 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelFlowNode>) {
           } : undefined}
           title={schema
             ? undefined
-            : `Layer: ${layerConfig?.label ?? layer} — no dbt schema resolved (run dbt compile or dbt docs generate)`}
+            : `Layer: ${layerConfig?.label ?? layer} — no schema resolved in project metadata`}
         >
           {schema
             ? SCHEMA_BADGE[schema.toLowerCase()] ?? schema.substring(0, 3).toUpperCase()
@@ -740,7 +744,7 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelFlowNode>) {
         )}
 
         {columns.length === 0 && !missingColumns.length && (
-          <div className="model-node__empty">No columns</div>
+          <div className="model-node__empty">{data.columnsKnown === false ? 'Schema unavailable' : 'No columns'}</div>
         )}
       </div>
 

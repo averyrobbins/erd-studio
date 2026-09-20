@@ -19,7 +19,7 @@ import * as path from 'path';
 // ---------------------------------------------------------------------------
 
 /** Version of the harness content. Bump when SCHEMA_CONTENT or generators change. */
-export const HARNESS_VERSION = '17';
+export const HARNESS_VERSION = '18';
 
 const VERSION_MARKER_PREFIX = '<!-- erd-studio-harness:';
 const VERSION_MARKER_SUFFIX = ' -->';
@@ -745,7 +745,7 @@ export class HarnessService {
    * @param semanticDir — the configured `erdStudio.semanticDir`; generated
    *   files reference this directory instead of the default `.erd-studio`.
    */
-  constructor(private readonly semanticDir: string = DEFAULT_SEMANTIC_DIR) {}
+  constructor(private readonly semanticDir: string = DEFAULT_SEMANTIC_DIR, private readonly provider: 'dbt' | 'sqlmesh' = 'dbt') {}
 
   /**
    * Generate the config file content for a given harness target.
@@ -755,6 +755,40 @@ export class HarnessService {
   }
 
   private generateDefaultContent(targetId: HarnessTarget['id']): string {
+    if (this.provider === 'sqlmesh') {
+      const logicalGuide = SCHEMA_CONTENT.split('## Physical Stage (Read-Only)')[0];
+      const content = `${logicalGuide}
+## SQLMesh integration (first draft)
+
+The Physical view reads .erd-studio/sqlmesh.json, a generated source-metadata export.
+It is not an observation of deployed warehouse tables. Do not edit the export.
+Use ERD Studio: Refresh Project Metadata to regenerate it in a trusted workspace.
+The exporter executes project configuration/macros but never plans or applies changes.
+
+Logical aliases map to canonical SQLMesh names in .erd-studio/sqlmesh-bindings.json:
+{"version":1,"models":{"dim_customer":"analytics.dim_customer"}}
+After changing a binding or renaming a bound logical model, refresh the export.
+Preserve qualified model identities and the case of exported column names.
+
+Only the erd_relationship(column := customer_id, to := analytics.dim_customer,
+field := customer_id) audit convention supplies FK edges in this draft. Unfiltered
+unique_values / unique_combination_of_columns supply uniqueness metadata.
+Lineage, grain and references are not enforced foreign keys.
+
+SQLMesh sync plans, automated source edits, warehouse observation and domain execution
+are not implemented in this draft. Do not execute an old dbt sync plan in this project.
+When explicitly asked to implement SQLMesh models, edit native MODEL / @model definitions
+and audits, preserve their existing logic, validate locally and review a development plan.
+Never apply a plan as part of viewing or refreshing a diagram.
+
+${buildVersionMarker()}
+<!-- erd-studio-provider: sqlmesh -->
+`;
+      if (targetId === 'codex') return `${CODEX_REGION_BEGIN}\n${CODEX_SECTION_HEADING}\n${content}\n${CODEX_REGION_END}\n`;
+      if (targetId === 'claude') return `---\nname: erd-studio\ndescription: Design and inspect ERD Studio logical models with SQLMesh source metadata.\n---\n${content}`;
+      if (targetId === 'copilot') return `---\napplyTo: '**/.erd-studio/**'\n---\n${content}`;
+      return content;
+    }
     switch (targetId) {
       case 'claude':
         return generateClaudeSkill();
@@ -824,7 +858,7 @@ export class HarnessService {
       if (target.id === 'claude') {
         // SYNC.md — progressive context loading for sync plan execution
         const syncPath = path.join(dir, 'SYNC.md');
-        fs.writeFileSync(syncPath, applySemanticDir(generateSyncGuide(), this.semanticDir), 'utf-8');
+        fs.writeFileSync(syncPath, applySemanticDir(this.provider === 'sqlmesh' ? 'SQLMesh sync execution is not available in this draft. Do not execute dbt sync plans.\n' : generateSyncGuide(), this.semanticDir), 'utf-8');
 
         // enforce-skill.sh — PreToolUse hook that blocks first .erd-studio edit
         // per session so Claude loads the /erd-studio skill before making changes
@@ -956,7 +990,8 @@ export class HarnessService {
         // Unmanaged file — leave it alone.
         continue;
       }
-      if (version !== HARNESS_VERSION) {
+      const installedProvider = content.includes('<!-- erd-studio-provider: sqlmesh -->') ? 'sqlmesh' : 'dbt';
+      if (version !== HARNESS_VERSION || installedProvider !== this.provider) {
         stale.push(target);
       }
     }

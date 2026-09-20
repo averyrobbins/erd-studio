@@ -781,7 +781,7 @@ export function Toolbar({ nodes, edges, allExpanded, onExpandAll, onCollapseAll 
             onClick={handleRefreshManifest}
             disabled={isRefreshing}
             data-tooltip="Refresh"
-            aria-label="Refresh manifest data"
+            aria-label={domain?.integration?.provider === 'sqlmesh' ? 'Refresh SQLMesh metadata' : 'Refresh manifest data'}
           >
             {isRefreshing ? <span className="toolbar__spinner" /> : '↻'}
           </button>

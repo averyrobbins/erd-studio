@@ -1,0 +1,14 @@
+name: fct_order
+grain: One row per order
+columns:
+  - name: order_id
+    dataType: INT
+    description: Order key
+    isPrimaryKey: true
+  - name: customer_id
+    dataType: INT
+    description: Customer key
+    isForeignKey: true
+  - name: amount
+    dataType: DECIMAL(10, 2)
+    description: Order amount

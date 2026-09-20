@@ -7,13 +7,13 @@ export const list_domains = {
   config: {
     title: 'List ERD domains',
     description:
-      'List all ERD Studio domains (diagrams) in a dbt project, grouped by layer. ' +
+      'List all ERD Studio domains (diagrams) in a dbt or SQLMesh project, grouped by layer. ' +
       'Each domain represents one ERD with its own models and relationships. ' +
       'Returns lightweight summaries — call read_domain for full details.',
     inputSchema: {
       project_path: z
         .string()
-        .describe('Absolute path to the dbt project root (directory containing dbt_project.yml).'),
+        .describe('Absolute path to the dbt or SQLMesh project root.'),
       layer: z
         .string()
         .optional()

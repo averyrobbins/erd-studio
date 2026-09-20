@@ -1,0 +1,11 @@
+name: dim_customer
+description: One row per customer
+grain: One row per customer
+columns:
+  - name: customer_id
+    dataType: INT
+    description: Customer key
+    isPrimaryKey: true
+  - name: name
+    dataType: TEXT
+    description: Customer name

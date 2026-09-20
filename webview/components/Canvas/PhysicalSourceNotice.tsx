@@ -30,6 +30,17 @@ export const PhysicalSourceNotice: React.FC = () => {
   const dismissed = useEditorStore((s) => s.physicalSourceNoticeDismissed);
   const dismiss = useEditorStore((s) => s.dismissPhysicalSourceNotice);
 
+  const integration = domain?.integration;
+  if (integration?.provider === 'sqlmesh' && domain?.stage === 'physical') {
+    return <div className="physical-source-notice" role="status">
+      <div className="physical-source-notice__text">
+        SQLMesh source metadata — {integration.status}. Types are declared or inferred, not observed in the warehouse.
+        {integration.generatedAt && ` Exported ${integration.generatedAt}.`}
+        {integration.diagnostics.length > 0 && <details><summary>{integration.diagnostics.length} diagnostic(s)</summary>
+          <ul>{integration.diagnostics.map((d, i) => <li key={i}>{d}</li>)}</ul></details>}
+      </div>
+    </div>;
+  }
   const sources = domain?.physicalSources;
   // `sources` is undefined on the logical stage and on any payload from an
   // older host, both of which have nothing to say here.

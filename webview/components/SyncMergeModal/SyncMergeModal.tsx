@@ -512,6 +512,7 @@ function ModelRowGroup({ model, conflictCols, sourceStage, targetStage, isCollap
 // ---------------------------------------------------------------------------
 
 export function SyncMergeModal() {
+  const isSqlmesh = useEditorStore((s) => s.domain?.integration?.provider === 'sqlmesh');
   const syncMode = useEditorStore((s) => s.syncMode);
   const setSyncMode = useEditorStore((s) => s.setSyncMode);
   const discrepancyReport = useEditorStore((s) => s.discrepancyReport);
@@ -661,7 +662,7 @@ export function SyncMergeModal() {
     document.addEventListener('mouseup', handleMouseUp);
   }, []);
 
-  if (!syncMode || !discrepancyReport) return null;
+  if (!syncMode || !discrepancyReport || isSqlmesh) return null;
 
   const sourceName = stageName(sourceStage);
   const targetName = stageName(targetStage);

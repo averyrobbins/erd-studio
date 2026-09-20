@@ -22,9 +22,10 @@ import './AddExistingModelDialog.css';
 // Source configuration
 // ---------------------------------------------------------------------------
 
-type SourceKey = 'logical' | 'yml' | 'manifest';
+type SourceKey = 'logical' | 'yml' | 'manifest' | 'sqlmesh';
 
 const SOURCE_CONFIG: Record<SourceKey, { label: string; description: string }> = {
+  sqlmesh: { label: 'SQLMesh', description: 'SQLMesh source metadata' },
   logical: { label: 'Logical', description: 'ERD Studio model library' },
   yml: { label: 'Physical', description: 'dbt .yml schema file' },
   manifest: { label: 'Compiled', description: 'Compiled manifest only' },
@@ -40,6 +41,7 @@ export function AddExistingModelDialog() {
   const existingModels = useEditorStore((s) => s.existingModels);
   const manifestModels = useEditorStore((s) => s.manifestModels);
   const modelFolder = useEditorStore((s) => s.domain?.modelFolder);
+  const isSqlmesh = useEditorStore((s) => s.domain?.integration?.provider === 'sqlmesh');
   const send = useSend();
 
   // Use existingModels if available (v5), fall back to manifestModels (v4 compat)
@@ -50,12 +52,12 @@ export function AddExistingModelDialog() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [activeFilters, setActiveFilters] = useState<Set<SourceKey>>(
-    new Set(['logical', 'yml', 'manifest']),
+    new Set(['logical', 'yml', 'manifest', 'sqlmesh']),
   );
 
   // Compute source counts for filter chips
   const sourceCounts = useMemo(() => {
-    const counts: Record<SourceKey, number> = { logical: 0, yml: 0, manifest: 0 };
+    const counts: Record<SourceKey, number> = { logical: 0, yml: 0, manifest: 0, sqlmesh: 0 };
     for (const m of models) {
       const source = 'source' in m ? (m.source as SourceKey) : 'manifest';
       counts[source]++;
@@ -81,6 +83,7 @@ export function AddExistingModelDialog() {
           m.name.toLowerCase().includes(query) ||
           m.schema.toLowerCase().includes(query) ||
           m.description.toLowerCase().includes(query) ||
+          ('qualifiedName' in m && m.qualifiedName?.toLowerCase().includes(query)) ||
           ('sourcePath' in m && (m as ExistingModelPreview).sourcePath.toLowerCase().includes(query)),
       );
     }
@@ -93,7 +96,7 @@ export function AddExistingModelDialog() {
     setAddExistingModelDialogOpen(false);
     setSearchQuery('');
     setSelectedModel(null);
-    setActiveFilters(new Set(['logical', 'yml', 'manifest']));
+    setActiveFilters(new Set(['logical', 'yml', 'manifest', 'sqlmesh']));
   }, [setAddExistingModelDialogOpen]);
 
   const handleSelect = useCallback((modelName: string) => {
@@ -152,7 +155,11 @@ export function AddExistingModelDialog() {
           <div className="add-existing-model-dialog__empty">
             <p>No models available to add.</p>
             <p className="add-existing-model-dialog__empty-hint">
-              {modelFolder ? (
+              {isSqlmesh ? (
+                <>Refresh SQLMesh metadata using <strong>ERD Studio: Refresh Project Metadata</strong>.
+                  {modelFolder && <> The model folder filter is <code>{modelFolder}/</code>.</>}
+                </>
+              ) : modelFolder ? (
                 <>
                   No models found in <code>{modelFolder}/</code>. Add <code>.yml</code> schema files to your dbt project or run <code>dbt compile</code>.
                 </>
@@ -271,7 +278,7 @@ export function AddExistingModelDialog() {
 // ---------------------------------------------------------------------------
 
 interface ModelItemProps {
-  model: ManifestModelPreview;
+  model: ManifestModelPreview | ExistingModelPreview;
   source: SourceKey;
   sourcePath?: string;
   isSelected: boolean;
@@ -309,6 +316,9 @@ function ModelItem({ model, source, sourcePath, isSelected, onSelect, onDoubleCl
         <div className="add-existing-model-dialog__item-path" title={sourcePath}>
           {sourcePath}
         </div>
+      )}
+      {'qualifiedName' in model && model.qualifiedName && (
+        <div className="add-existing-model-dialog__item-path" title={model.qualifiedName}>{model.qualifiedName}</div>
       )}
       <div className="add-existing-model-dialog__item-meta">
         <span className="add-existing-model-dialog__item-columns">

@@ -21,6 +21,7 @@ import './WelcomeModal.css';
 export function WelcomeModal() {
   const vscode = useVsCodeApi();
   const welcomeModalOpen = useEditorStore((s) => s.welcomeModalOpen);
+  const isSqlmesh = useEditorStore((s) => s.domain?.integration?.provider === 'sqlmesh');
   const setWelcomeModalOpen = useEditorStore((s) => s.setWelcomeModalOpen);
 
   // Handle "Get Started" button — tell extension to persist dismissal in globalState
@@ -43,7 +44,7 @@ export function WelcomeModal() {
           <h2 className="welcome-modal__title">Welcome to ERD Studio</h2>
           <p className="welcome-modal__subtitle">
             Design your data warehouse visually, then compare what you
-            designed to what's built.
+            designed to your project metadata.
           </p>
         </div>
 
@@ -78,10 +79,12 @@ export function WelcomeModal() {
                 <div className="welcome-modal__guide-text">
                   <strong>Physical</strong>
                   <span>
-                    Automatically read from your dbt project — see what's
+                    {isSqlmesh ? <>Read the saved SQLMesh export to see declared or inferred columns
+                    and audit relationships. This is source metadata, not observed warehouse tables.
+                    Use Refresh Project Metadata after changing your SQLMesh project.</> : <>Automatically read from your dbt project — see what's
                     actually there. Data types come from your .yml files, from a
                     compiled manifest, or — most accurately — from your warehouse
-                    once <code>dbt docs generate</code> has been run.
+                    once <code>dbt docs generate</code> has been run.</>}
                   </span>
                 </div>
               </div>
@@ -109,7 +112,7 @@ export function WelcomeModal() {
               <li className="welcome-modal__step">
                 <span className="welcome-modal__step-number">3</span>
                 <span className="welcome-modal__step-text">
-                  Toggle <strong>Diff</strong> to compare your design against what's in dbt and spot differences
+                  Toggle <strong>Diff</strong> to compare your design against project metadata and spot differences
                 </span>
               </li>
             </ol>

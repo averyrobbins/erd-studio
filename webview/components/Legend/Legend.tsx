@@ -78,7 +78,7 @@ export function Legend() {
               </div>
               <div className="legend__item-text">
                 <span className="legend__item-label">Physical</span>
-                <span className="legend__item-desc">Declared in dbt .yml files (read-only)</span>
+                <span className="legend__item-desc">Project metadata (read-only)</span>
               </div>
             </div>
             <div className="legend__item">
@@ -87,7 +87,7 @@ export function Legend() {
               </div>
               <div className="legend__item-text">
                 <span className="legend__item-label">Ghost</span>
-                <span className="legend__item-desc">Not found in your dbt project</span>
+                <span className="legend__item-desc">Not found in project metadata</span>
               </div>
             </div>
           </div>

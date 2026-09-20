@@ -93,6 +93,8 @@ import {
 } from '../services/feedbackAnalysisService';
 import type { ReportTrackingService } from '../services/reportTrackingService';
 import type { CatalogService } from '../services/catalogService';
+import type { ProjectAdapter } from '../services/projectAdapter';
+import { SqlmeshProjectAdapter } from '../services/sqlmeshAdapter';
 import type { CatalogData } from '../types/catalog';
 import { OwnWriteTracker, ownWrites } from '../services/ownWriteTracker';
 import type {
@@ -296,6 +298,19 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
    * derives the physical stage from yml and manifest, exactly as before.
    */
   private catalogService: CatalogService | undefined;
+  private projectAdapter?: ProjectAdapter;
+  setProjectAdapter(adapter: ProjectAdapter): void { this.projectAdapter = adapter; this.selectorsService.setEnabled(adapter.provider === 'dbt'); }
+  private async loadProjectManifest(): Promise<ManifestData> {
+    return this.projectAdapter ? (await this.projectAdapter.load()).manifest : this.manifestService.loadManifest(this.workspaceRoot);
+  }
+  private async loadProjectDeclarations(): Promise<YmlData> {
+    return this.projectAdapter ? (await this.projectAdapter.load()).declarations : this.ymlParserService.loadYmlData(this.workspaceRoot, undefined);
+  }
+  private buildProjectPhysicalDomain(domain: UnifiedDomain, declarations: YmlData, manifest: ManifestData, catalog?: CatalogData): DisplayDomain {
+    return this.projectAdapter ? this.projectAdapter.buildPhysical(domain, { declarations, manifest, catalog })
+      : this.domainService.buildPhysicalDomain(domain, declarations, manifest, catalog);
+  }
+
 
   /** @see catalogService */
   setCatalogService(catalogService: CatalogService | undefined): void {
@@ -309,7 +324,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
    * every failure, and `buildPhysicalDomain()` treats undefined as "no catalog".
    */
   private async loadCatalog(): Promise<CatalogData | undefined> {
-    return this.catalogService?.loadCatalog(this.workspaceRoot);
+    return this.projectAdapter ? (await this.projectAdapter.load()).catalog : this.catalogService?.loadCatalog(this.workspaceRoot);
   }
 
   /**
@@ -460,6 +475,11 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
         sourcePath: path.relative(this.workspaceRoot, absPath),
       });
       addedNames.add(model.name);
+    }
+
+    if (this.projectAdapter?.existingModels) {
+      existingModels.push(...this.projectAdapter.existingModels(new Set([...existingModelNames, ...addedNames]), modelFolder));
+      return { templates, existingModels, manifestModels: existingModels.filter(m => m.source !== 'logical') };
     }
 
     // 2. dbt .yml source file models (declared in dbt project)
@@ -1079,6 +1099,10 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
             break;
           }
           case 'generateSyncPlan': {
+            if (this.projectAdapter?.provider === 'sqlmesh') {
+              this.post(webviewPanel.webview, { type: 'error', payload: { message: 'SQLMesh sync plans are not available in this first draft.' } });
+              break;
+            }
             const payload = (message as { payload?: { selections: Record<string, GroundTruth> } }).payload;
             if (payload) {
               await this.handleGenerateSyncPlan(panelKey, document, webviewPanel.webview, payload.selections);
@@ -1533,6 +1557,11 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     const layerConfig = this.layerService.getLayer(domain.layer);
 
     return {
+      ...(this.projectAdapter instanceof SqlmeshProjectAdapter ? {
+        integration: { provider: 'sqlmesh' as const, status: this.projectAdapter.status,
+          generatedAt: this.projectAdapter.generatedAt, diagnostics: this.projectAdapter.diagnostics },
+        identifierCaseSensitive: true,
+      } : {}),
       schemaVersion: domain.schemaVersion,
       domain: domain.domain,
       layer: domain.layer,
@@ -1591,8 +1620,8 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       const panel = this.openPanels.get(key);
       const activeStage = panel?.activeStage ?? 'logical';
 
-      const manifest = await this.manifestService.loadManifest(this.workspaceRoot);
-      const ymlData = await this.ymlParserService.loadYmlData(this.workspaceRoot, undefined);
+      const manifest = await this.loadProjectManifest();
+      const ymlData = await this.loadProjectDeclarations();
       const catalog = await this.loadCatalog();
       const welcomeDismissed = !!this.context.globalState.get('welcomeDismissed');
 
@@ -1614,7 +1643,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       }
 
       if (activeStage === 'physical') {
-        const physicalDomain = this.domainService.buildPhysicalDomain(unifiedDomain, ymlData, manifest, catalog);
+        const physicalDomain = this.buildProjectPhysicalDomain(unifiedDomain, ymlData, manifest, catalog);
         const layerConfig = this.layerService.getLayer(unifiedDomain.layer);
         if (layerConfig) { physicalDomain.layerConfig = layerConfig; }
         this.post(webview, { type: 'domainLoaded', payload: physicalDomain, welcomeDismissed });
@@ -3063,28 +3092,27 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
         // rejected edit leaves no orphan yml behind and one undo removes both.
         let seededModel: import('../types/semantic').SemanticModel | undefined;
         if (!this.logicalModelService.modelExists(payload.modelName)) {
-          const seedYmlData = await this.ymlParserService.loadYmlData(this.workspaceRoot, undefined);
+          const seedYmlData = await this.loadProjectDeclarations();
           const ymlModel = seedYmlData.models.get(payload.modelName);
           if (ymlModel) {
             seededModel = this.logicalModelService.ymlToSemanticModel(ymlModel);
           } else {
-            const manifest = await this.manifestService.loadManifest(this.workspaceRoot);
+            const manifest = await this.loadProjectManifest();
             const manifestModel = manifest.models.get(payload.modelName);
             if (manifestModel) {
               seededModel = this.logicalModelService.manifestToSemanticModel(manifestModel);
             }
           }
           if (!seededModel) {
-            webview.postMessage({ type: 'error', payload: { message: `Model "${payload.modelName}" not found in .yml files, manifest, or logical-models/.` } });
+            webview.postMessage({ type: 'error', payload: { message: `Model "${payload.modelName}" not found in project metadata or logical-models/.` } });
             return;
           }
         }
 
         // Add name reference + position + auto-relationships to domain
         // Use yml relationship tests as primary, fall back to manifest
-        const ymlData = await this.ymlParserService.loadYmlData(this.workspaceRoot, undefined);
-        await this.manifestService.loadManifest(this.workspaceRoot);
-        const manifestRelTests = this.manifestService.getRelationshipTests();
+        const ymlData = await this.loadProjectDeclarations();
+        const manifestRelTests = (await this.loadProjectManifest()).relationshipTests;
         const relationshipTests = ymlData.relationshipTests.length > 0
           ? ymlData.relationshipTests
           : manifestRelTests;
@@ -3109,7 +3137,8 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
                 relationships.push({
                   fromModel: test.fromModel, fromColumn: test.fromColumn,
                   toModel: test.toModel, toColumn: test.toColumn,
-                  cardinality: 'many-to-one',
+                  cardinality: this.projectAdapter instanceof SqlmeshProjectAdapter
+                    ? this.projectAdapter.relationshipCardinality(test.fromModel, test.fromColumn, test.toModel, test.toColumn) : 'many-to-one',
                 });
               }
             }
@@ -3139,8 +3168,8 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       }
 
       // V4: legacy inline path — try yml first, fall back to manifest
-      const ymlData = await this.ymlParserService.loadYmlData(this.workspaceRoot, undefined);
-      const manifest = await this.manifestService.loadManifest(this.workspaceRoot);
+      const ymlData = await this.loadProjectDeclarations();
+      const manifest = await this.loadProjectManifest();
       const ymlModel = ymlData.models.get(payload.modelName);
       const manifestModel = manifest.models.get(payload.modelName);
 
@@ -3154,7 +3183,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
 
       // Use yml relationship tests as primary, fall back to manifest
       const ymlRelTests = ymlData.relationshipTests;
-      const manifestRelTests = this.manifestService.getRelationshipTests();
+      const manifestRelTests = (await this.loadProjectManifest()).relationshipTests;
       const relationshipTests = ymlRelTests.length > 0 ? ymlRelTests : manifestRelTests;
 
       await this.applyDomainEdit(
@@ -3208,7 +3237,8 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
               relationships.push({
                 fromModel: test.fromModel, fromColumn: test.fromColumn,
                 toModel: test.toModel, toColumn: test.toColumn,
-                cardinality: 'many-to-one' as const,
+                cardinality: this.projectAdapter instanceof SqlmeshProjectAdapter
+                  ? this.projectAdapter.relationshipCardinality(test.fromModel, test.fromColumn, test.toModel, test.toColumn) : 'many-to-one',
               });
             }
           }
@@ -3453,8 +3483,8 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       // Update tracked stage
       panel.activeStage = targetStage;
 
-      const manifest = await this.manifestService.loadManifest(this.workspaceRoot);
-      const ymlData = await this.ymlParserService.loadYmlData(this.workspaceRoot, undefined);
+      const manifest = await this.loadProjectManifest();
+      const ymlData = await this.loadProjectDeclarations();
       const catalog = await this.loadCatalog();
 
       const unifiedDomain = this.domainService.getDomain(document.uri.fsPath);
@@ -3469,7 +3499,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       if (targetStage === 'physical') {
         // Physical stage is derived from the dbt project itself, enriched by the
         // manifest and the warehouse catalog when either has been generated.
-        const physicalDomain = this.domainService.buildPhysicalDomain(unifiedDomain, ymlData, manifest, catalog);
+        const physicalDomain = this.buildProjectPhysicalDomain(unifiedDomain, ymlData, manifest, catalog);
         const layerConfig = this.layerService.getLayer(unifiedDomain.layer);
         if (layerConfig) {
           physicalDomain.layerConfig = layerConfig;
@@ -3512,8 +3542,8 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       const panel = this.openPanels.get(panelKey);
       if (!panel) return;
 
-      const manifest = await this.manifestService.loadManifest(this.workspaceRoot);
-      const ymlData = await this.ymlParserService.loadYmlData(this.workspaceRoot, undefined);
+      const manifest = await this.loadProjectManifest();
+      const ymlData = await this.loadProjectDeclarations();
       const catalog = await this.loadCatalog();
       const sourceStage = panel.activeStage;
       const targetStage = payload.compareAgainst;
@@ -3544,7 +3574,9 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
 
       // Also check manifest staleness and send alongside
       try {
-        const staleness = await checkManifestStaleness(this.workspaceRoot);
+        const staleness = this.projectAdapter instanceof SqlmeshProjectAdapter
+          ? { isStale: this.projectAdapter.status !== 'ready', manifestMtime: null, newestSourceMtime: null }
+          : await checkManifestStaleness(this.workspaceRoot);
         webview.postMessage({ type: 'manifestStaleness', payload: staleness });
       } catch {
         // Non-critical — staleness check failure shouldn't break discrepancy
@@ -3552,6 +3584,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[SemanticEditorProvider] Discrepancy comparison failed: ${message}`);
+      this.post(webview, { type: 'error', payload: { message } });
       webview.postMessage({ type: 'discrepancyReport', payload: null });
     }
   }
@@ -3571,7 +3604,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
   ): Promise<DisplayDomain> {
     const unifiedDomain = this.domainService.getDomain(document.uri.fsPath);
     if (stage === 'physical') {
-      return this.domainService.buildPhysicalDomain(unifiedDomain, ymlData, manifest, catalog);
+      return this.buildProjectPhysicalDomain(unifiedDomain, ymlData, manifest, catalog);
     }
     const domain = this.domainService.getDomainStage(document.uri.fsPath);
     return this.buildDisplayDomain(domain, manifest, ymlData, unifiedDomain.viewConfig, unifiedDomain.stubColumns);
@@ -3601,8 +3634,8 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       }
 
       const report = panel.lastDiscrepancyReport;
-      const manifest = await this.manifestService.loadManifest(this.workspaceRoot);
-      const ymlData = await this.ymlParserService.loadYmlData(this.workspaceRoot, undefined);
+      const manifest = await this.loadProjectManifest();
+      const ymlData = await this.loadProjectDeclarations();
       const semanticDir = getErdStudioSetting('semanticDir', '.erd-studio');
 
       // Build resolutions from selections
@@ -3789,6 +3822,10 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
    * The existing FileWatcherService will detect manifest changes and refresh.
    */
   private async handleRunDbtCompile(): Promise<void> {
+    if (this.projectAdapter?.provider === 'sqlmesh') {
+      await vscode.commands.executeCommand('erdStudio.refreshManifest');
+      return;
+    }
     const terminal = vscode.window.createTerminal({ name: 'dbt compile', cwd: this.workspaceRoot });
     terminal.show();
     const activate = findVenvActivate(this.workspaceRoot);
@@ -3808,6 +3845,10 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
    * throwing "Terminal has already been disposed" inside the timer.
    */
   private async handleLaunchClaudeSync(): Promise<void> {
+    if (this.projectAdapter?.provider === 'sqlmesh') {
+      void vscode.window.showInformationMessage('SQLMesh sync execution is not available in this first draft.');
+      return;
+    }
     const semanticDir = getErdStudioSetting('semanticDir', '.erd-studio');
     const skipPermissions = getErdStudioSetting<boolean>('claudeSync.skipPermissions', false) === true;
     const planPath = `${semanticDir}/.sync-plan.json`;

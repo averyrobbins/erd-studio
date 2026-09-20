@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 5,
+  "domain": "orders",
+  "layer": "silver",
+  "description": "SQLMesh integration example",
+  "logical": {
+    "models": ["dim_customer", "fct_order"],
+    "relationships": [{"fromModel": "fct_order", "fromColumn": "customer_id", "toModel": "dim_customer", "toColumn": "customer_id", "cardinality": "many-to-one"}]
+  },
+  "viewConfig": {}
+}

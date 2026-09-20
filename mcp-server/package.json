@@ -1,7 +1,7 @@
 {
   "name": "erd-studio-mcp",
   "version": "0.1.0",
-  "description": "MCP server for ERD Studio — read your dbt project's semantic ERD model from Claude, Cursor, Continue, or any MCP client.",
+  "description": "MCP server for ERD Studio — read dbt or SQLMesh project metadata and semantic ERD models from any MCP client.",
   "type": "module",
   "bin": {
     "erd-studio-mcp": "./dist/index.js"

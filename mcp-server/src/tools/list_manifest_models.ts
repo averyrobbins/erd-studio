@@ -1,19 +1,19 @@
 import { z } from 'zod';
 import { buildServices } from '../services.js';
+import { SqlmeshProjectAdapter } from '../../../src/services/sqlmeshAdapter.js';
 
 export const list_manifest_models = {
   name: 'list_manifest_models',
   config: {
-    title: 'List dbt manifest models',
+    title: 'List manifest models (legacy)',
     description:
-      'List all models from target/manifest.json — what dbt actually built. ' +
-      'Returns model name, schema, columns with data types from the warehouse, and existing ' +
-      'unique/relationship test coverage. This is the ground truth from dbt, ' +
-      'complementing the design source-of-truth in list_models / read_domain.',
+      'Legacy model summary: dbt manifest or saved SQLMesh export, including column counts and ' +
+      'declared unique/relationship evidence. Use list_project_models for columns, provenance ' +
+      'and SQLMesh export status. A manifest/export alone does not prove deployment or passing tests.',
     inputSchema: {
       project_path: z
         .string()
-        .describe('Absolute path to the dbt project root.'),
+        .describe('Absolute path to the dbt or SQLMesh project root.'),
       name_contains: z
         .string()
         .optional()
@@ -31,8 +31,8 @@ export const list_manifest_models = {
     project_path: string;
     name_contains?: string;
   }) {
-    const { manifestService, projectPath } = buildServices(project_path);
-    const manifest = await manifestService.loadManifest(projectPath);
+    const { projectAdapter } = buildServices(project_path);
+    const { manifest } = await projectAdapter.load();
 
     const filter = name_contains?.toLowerCase();
     const allModels = Array.from(manifest.models.entries());
@@ -46,6 +46,8 @@ export const list_manifest_models = {
           type: 'text' as const,
           text: JSON.stringify(
             {
+              ...(projectAdapter instanceof SqlmeshProjectAdapter ? { provider: 'sqlmesh', status: projectAdapter.status,
+                generatedAt: projectAdapter.generatedAt, diagnostics: projectAdapter.diagnostics } : {}),
               count: matched.length,
               total: allModels.length,
               models: matched.map(([name, info]) => ({

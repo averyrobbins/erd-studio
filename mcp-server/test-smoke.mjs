@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_PATH = path.resolve(__dirname, '../test/fixtures/dbt-project');
+const SQLMESH_PATH = path.resolve(__dirname, '../test/fixtures/sqlmesh-project');
 const SERVER = path.resolve(__dirname, 'dist/index.js');
 
 // Build a temporary "uninitialized" project — has dbt_project.yml but no .erd-studio/
@@ -134,6 +135,24 @@ async function main() {
     arguments: { project_path: PROJECT_PATH, name_contains: 'dim' },
   });
   summarize('list_manifest_models', lmm);
+
+  // Native reads need no SQLMesh/Python process and retain metadata provenance.
+  const native = await rpc('tools/call', {
+    name: 'list_project_models', arguments: { project_path: SQLMESH_PATH },
+  });
+  const mesh = JSON.parse(native.result?.content?.[0]?.text || '{}');
+  const order = mesh.models?.find(m => m.name === 'fct_order');
+  if (mesh.provider === 'sqlmesh' && mesh.status === 'ready' && mesh.count === 7
+      && order?.provenance?.types === 'sqlmesh-inferred'
+      && order.qualifiedName.includes('"analytics"."fct_order"')
+      && order.columns.some(c => c.name === 'customer_id')
+      && mesh.relationships?.[0]?.cardinality === 'many-to-one') {
+    console.log('✅ SQLMesh models, columns, identities, provenance and relationships');
+  } else { fail('SQLMesh metadata differs from fixture'); console.log(mesh); }
+  const nativeDomain = await rpc('tools/call', {
+    name: 'read_domain', arguments: { project_path: SQLMESH_PATH, layer: 'silver', domain: 'orders' },
+  });
+  summarize('SQLMesh read_domain', nativeDomain);
 
   // 8. Call get_editor_setup
   console.log('\n--- get_editor_setup ---');

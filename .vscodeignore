@@ -68,3 +68,8 @@ selectors.yml
 # Re-include dist (but maps already excluded above)
 !dist/*.js
 !dist/*.css
+
+# SQLMesh companion source and local development environment
+integrations/**
+.venv*/**
+!dist/sqlmesh_export.py

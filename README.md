@@ -51,11 +51,18 @@ The **Physical** view is the lower half of the diagram, and it has no file of it
 
 Each model shows where its shape came from, so a `varchar` on the canvas is never a guess: types are read from the warehouse when the catalog is there, otherwise from the `data_type:` you wrote, otherwise left blank rather than invented. A greyed-out model means it is genuinely not in your dbt project, not that you have not run dbt lately. And the edges are the tests you already run — `relationships` for the links, `unique` for the cardinality — so the canvas shows what dbt enforces rather than a second copy that can drift. Nothing is ever written to disk.
 
-dbt is the only stack ERD Studio can read today. If you model somewhere else, [contribute an integration or propose one](https://github.com/liam-machine/erd-studio/issues) — your logical model files stay exactly as they are as support grows.
+### Reading SQLMesh projects (development preview)
+
+This branch adds native SQLMesh model import, a Physical view of declared/inferred
+source metadata, and logical-to-physical comparison. A small Python exporter runs
+only when you request **Refresh Project Metadata**; reading a saved diagram needs
+no Python process. SQLMesh sync, warehouse introspection, and domain execution are
+still deferred. This preview is available from source, not the published extension.
+See the [setup guide and limitations](integrations/sqlmesh/README.md).
 
 ## Get started
 
-Requires **VS Code 1.85+** and a project containing `dbt_project.yml` (see [logical-only setup](#not-using-dbt)). The Physical view needs nothing beyond your dbt schema YAMLs, and gets richer once `manifest.json` and `catalog.json` exist.
+Requires **VS Code 1.85+** and a dbt or native SQLMesh project (see [logical-only setup](#not-using-dbt)). The dbt Physical view needs nothing beyond your dbt schema YAMLs, and gets richer once `manifest.json` and `catalog.json` exist. SQLMesh requires the exported snapshot described above.
 
 1. [Install ERD Studio](https://marketplace.visualstudio.com/items?itemName=liamwynne.erd-studio) and open your project in VS Code.
 2. Click the **ERD Studio** icon in the Activity Bar, choose **Set Up ERD Studio**, and follow the prompts to create your first domain (a diagram).
@@ -72,7 +79,8 @@ Use ERD Studio for your **logical models**: design tables, relationships, and bu
 
 For now, add a `dbt_project.yml` file containing `name: logical_models` to your project root and reload VS Code. The extension still uses that file to recognise the project; no dbt build or warehouse connection is needed for logical modelling.
 
-Physical comparison needs dbt, so the canvas stays on the Logical stage — everything else works unchanged.
+For projects without either integration, stay on the Logical stage. Native SQLMesh
+projects use the preview above and do not need this dummy dbt file.
 
 [File format reference](docs/semantic-domain-json-reference.md) · [Release notes](CHANGELOG.md) · [Send feedback](https://github.com/liam-machine/erd-studio/issues) · [Contribute on GitHub](https://github.com/liam-machine/erd-studio)
 

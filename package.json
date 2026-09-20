@@ -1,7 +1,7 @@
 {
   "name": "erd-studio",
   "displayName": "ERD Studio",
-  "description": "Visual ERD designer for dbt — design your data warehouse on a canvas, in your repo, as plain YAML your AI assistant can read. Kimball/dimensional modelling, then compare the design against what dbt actually built.",
+  "description": "Visual ERD designer for dbt and SQLMesh \u2014 design your data warehouse, then compare your logical model with project metadata.",
   "version": "1.0.5",
   "publisher": "liamwynne",
   "license": "SEE LICENSE IN LICENSE",
@@ -36,7 +36,8 @@
     "AI",
     "claude",
     "copilot",
-    "MCP"
+    "MCP",
+    "sqlmesh"
   ],
   "engines": {
     "vscode": "^1.85.0"
@@ -46,7 +47,11 @@
     "Other"
   ],
   "activationEvents": [
-    "workspaceContains:**/dbt_project.yml"
+    "workspaceContains:**/dbt_project.yml",
+    "workspaceContains:**/config.yaml",
+    "workspaceContains:**/config.yml",
+    "workspaceContains:**/config.py",
+    "workspaceContains:**/.erd-studio/sqlmesh.json"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -73,7 +78,7 @@
       },
       {
         "command": "erdStudio.refreshManifest",
-        "title": "Refresh Manifest",
+        "title": "Refresh Project Metadata",
         "category": "ERD Studio"
       },
       {
@@ -232,7 +237,7 @@
     "viewsWelcome": [
       {
         "view": "erdStudio.domainTree",
-        "contents": "No ERD domains found.\n\nERD Studio lets you design your data warehouse visually across two stages:\n\n**Logical** — columns, data types, FK keys, and design rationale\n**Physical** — read-only view of what's built in dbt\n\n[Set Up ERD Studio](command:erdStudio.setupSemanticDirectory)\n\nCreates the .erd-studio directory structure and your first domain.\n\n[Install AI Coding Harness](command:erdStudio.installCodingHarness)\n\nAdd ERD Studio schema reference to Claude, Copilot, Gemini, or Codex."
+        "contents": "No ERD domains found.\n\nERD Studio lets you design your data warehouse visually across two stages:\n\n**Logical** \u2014 columns, data types, FK keys, and design rationale\n**Physical** \u2014 read-only view of project metadata\n\n[Set Up ERD Studio](command:erdStudio.setupSemanticDirectory)\n\nCreates the .erd-studio directory structure and your first domain.\n\n[Install AI Coding Harness](command:erdStudio.installCodingHarness)\n\nAdd ERD Studio schema reference to Claude, Copilot, Gemini, or Codex."
       },
       {
         "view": "erdStudio.modelLibrary",
@@ -316,7 +321,7 @@
         "erdStudio.projectPath": {
           "type": "string",
           "default": "",
-          "description": "Path to dbt project root (auto-detected from workspace). Changing this requires a window reload."
+          "description": "Path to the dbt or SQLMesh project root. Auto-detected when empty. Changing this requires a window reload."
         },
         "erdStudio.semanticDir": {
           "type": "string",
@@ -332,7 +337,7 @@
           "scope": "machine",
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Let the Feedback dialog make **one** request to a language model to draft a title, pick bug vs feature, and check for duplicate issues. Only what you typed is sent — diagnostics, file paths and model names never are. Your own model is used where VS Code has one (VS Code asks for access itself, once); otherwise `#erdStudio.feedback.endpoint#`, or — if `#erdStudio.feedback.hostedFallback#` is on — a relay run by the extension author that forwards your description to a named third-party AI provider under the author's account. That last one always asks first and names both. Turn this off to make no request at all."
+          "markdownDescription": "Let the Feedback dialog make **one** request to a language model to draft a title, pick bug vs feature, and check for duplicate issues. Only what you typed is sent \u2014 diagnostics, file paths and model names never are. Your own model is used where VS Code has one (VS Code asks for access itself, once); otherwise `#erdStudio.feedback.endpoint#`, or \u2014 if `#erdStudio.feedback.hostedFallback#` is on \u2014 a relay run by the extension author that forwards your description to a named third-party AI provider under the author's account. That last one always asks first and names both. Turn this off to make no request at all."
         },
         "erdStudio.feedback.provider": {
           "scope": "machine",
@@ -356,13 +361,13 @@
             "Only `#erdStudio.feedback.endpoint#`, with the key you stored via **ERD Studio: Set Feedback API Key**. Not offered in the dialog unless you have already picked it here.",
             "Only the small relay run by the extension author, which forwards your description to a third-party AI provider under the author's account. Pick this if you have Copilot but would rather not spend it on triaging feedback. Requires `#erdStudio.feedback.hostedFallback#` to be on, and asks before the first request."
           ],
-          "markdownDescription": "Which model triages your feedback. The Feedback dialog offers two: your editor’s own model, or the ERD Studio service. Each pins one destination and does **not** fall through — if the one you pick is unavailable here, the dialog says so and offers the other rather than quietly sending your text somewhere you did not choose. `auto` (the old default, your own model first) and `endpoint` still work if you set them here, but the dialog no longer offers them."
+          "markdownDescription": "Which model triages your feedback. The Feedback dialog offers two: your editor\u2019s own model, or the ERD Studio service. Each pins one destination and does **not** fall through \u2014 if the one you pick is unavailable here, the dialog says so and offers the other rather than quietly sending your text somewhere you did not choose. `auto` (the old default, your own model first) and `endpoint` still work if you set them here, but the dialog no longer offers them."
         },
         "erdStudio.feedback.hostedFallback": {
           "scope": "machine",
           "type": "boolean",
           "default": true,
-          "markdownDescription": "As a last resort — when VS Code offers no language model and `#erdStudio.feedback.endpoint#` is empty — allow the Feedback dialog to send your description to a small relay run by the extension author, which forwards it to a third-party AI provider under the author's account and that provider's terms. You are always asked first — the prompt names the relay and the provider — and the request carries only what you typed. Turn this off to keep feedback analysis on your own model or endpoint only."
+          "markdownDescription": "As a last resort \u2014 when VS Code offers no language model and `#erdStudio.feedback.endpoint#` is empty \u2014 allow the Feedback dialog to send your description to a small relay run by the extension author, which forwards it to a third-party AI provider under the author's account and that provider's terms. You are always asked first \u2014 the prompt names the relay and the provider \u2014 and the request carries only what you typed. Turn this off to keep feedback analysis on your own model or endpoint only."
         },
         "erdStudio.feedback.endpoint": {
           "scope": "machine",
@@ -390,6 +395,32 @@
           "type": "string",
           "markdownDeprecationMessage": "Deprecated: use `#erdStudio.semanticDir#` instead. Legacy values are still honoured.",
           "description": "Relative path to ERD domain files within the project"
+        },
+        "erdStudio.provider": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "dbt",
+            "sqlmesh"
+          ],
+          "default": "auto",
+          "description": "Project integration. Auto prefers dbt when dbt_project.yml exists. Changing this requires a reload."
+        },
+        "erdStudio.sqlmesh.pythonPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Python executable in the SQLMesh project environment. Defaults to project .venv, then python3 (python on Windows). Used only by explicit metadata refresh."
+        },
+        "erdStudio.sqlmesh.gateway": {
+          "type": "string",
+          "default": "",
+          "description": "SQLMesh gateway used when exporting source metadata."
+        },
+        "erdStudio.sqlmesh.config": {
+          "type": "string",
+          "default": "",
+          "description": "Optional Python configuration object name for the SQLMesh exporter."
         }
       }
     }

@@ -83,6 +83,21 @@ const chip = (container: HTMLElement) => container.querySelector('.model-node__s
 // ---------------------------------------------------------------------------
 
 describe('ModelNode provenance chip', () => {
+  it('distinguishes declared and inferred SQLMesh metadata from warehouse observation', () => {
+    for (const types of ['sqlmesh-declared', 'sqlmesh-inferred'] as const) {
+      const { container, unmount } = renderNode({ provenance: { columns: [types], types } });
+      expect(chip(container)!.textContent).toBe('MESH');
+      expect(chip(container)!.getAttribute('title')).toContain(types === 'sqlmesh-declared' ? 'declared' : 'inference');
+      expect(chip(container)!.className).not.toContain('model-node__source--catalog');
+      unmount();
+    }
+  });
+
+  it('distinguishes an unknown schema from a model with no columns', () => {
+    const { container } = renderNode({ columns: [], columnsKnown: false });
+    expect(container.querySelector('.model-node__empty')!.textContent).toBe('Schema unavailable');
+  });
+
   it('renders the chip for a catalog-typed model, with the verified modifier', () => {
     const { container } = renderNode({ provenance: { columns: ['catalog', 'yml'], types: 'catalog' } });
 

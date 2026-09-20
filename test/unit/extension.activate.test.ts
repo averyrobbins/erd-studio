@@ -76,6 +76,7 @@ beforeEach(() => {
   vscode._resetMockGithubSession();
   vscode._resetMockLanguageModels();
   vscode.workspace.workspaceFolders = [];
+  vscode.workspace.isTrusted = true;
   vscode.window.tabGroups.all = [];
   vscode.window.tabGroups.activeTabGroup.activeTab = undefined;
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -113,7 +114,7 @@ describe('activate() without a dbt project', () => {
         NO_LEGACY_ALIAS.has(command) ? 0 : 1,
       );
     }
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('No dbt project found'), 'Open Settings');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('No supported project found'), 'Open Settings');
   });
 
   it('registers a stub domain editor and no tree views (early return)', async () => {
@@ -144,7 +145,7 @@ describe('activate() without a dbt project', () => {
     await vscode.commands.executeCommand('dbtSemantic.addLayer');
 
     expect(warn).toHaveBeenCalledTimes(before + 2);
-    expect(warn.mock.calls.at(-1)?.[0]).toContain('No dbt project found');
+    expect(warn.mock.calls.at(-1)?.[0]).toContain('No supported project found');
   });
 
   it('erdStudio.reportBug is live before the early return: cancelling the title opens nothing', async () => {
@@ -233,7 +234,7 @@ describe('activate() with a dbt project', () => {
     }
     // Aliases are registered in code only — never contributed in package.json.
     expect(CONTRIBUTED.some((c) => c.startsWith('dbtSemantic.'))).toBe(false);
-    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('No dbt project found'), expect.anything());
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('No supported project found'), expect.anything());
   });
 
   it('legacy aliases delegate to the erdStudio.* handler with the same arguments', async () => {
@@ -343,8 +344,8 @@ describe('activate() project-root resolution', () => {
 
     await activate(context);
 
-    expect(console.log).toHaveBeenCalledWith(`ERD Studio: Found dbt project at ${path.join(root, 'b')}`);
-    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('No dbt project found'), expect.anything());
+    expect(console.log).toHaveBeenCalledWith(`ERD Studio: Found project at ${path.join(root, 'b')}`);
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('No supported project found'), expect.anything());
   });
 
   it('an explicit erdStudio.projectPath beats the legacy one', async () => {
@@ -356,6 +357,30 @@ describe('activate() project-root resolution', () => {
 
     await activate(context);
 
-    expect(console.log).toHaveBeenCalledWith(`ERD Studio: Found dbt project at ${path.join(root, 'a')}`);
+    expect(console.log).toHaveBeenCalledWith(`ERD Studio: Found project at ${path.join(root, 'a')}`);
+  });
+});
+
+
+describe('activate() with a native SQLMesh project', () => {
+  it('registers the editor without dbt and never generates dbt selectors', async () => {
+    fs.cpSync(path.join(REPO_ROOT, 'test/fixtures/sqlmesh-project'), root, { recursive: true });
+    openWorkspace(root);
+    const registerEditor = vi.spyOn(vscode.window, 'registerCustomEditorProvider');
+    await activate(context);
+    expect(registerEditor).toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('No supported project found'), 'Open Settings');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fs.existsSync(path.join(root, 'selectors.yml'))).toBe(false);
+    await vscode.commands.executeCommand('erdStudio.syncDomainTags');
+    expect(fs.existsSync(path.join(root, 'selectors.yml'))).toBe(false);
+  });
+  it('blocks executing the exporter in an untrusted workspace', async () => {
+    fs.cpSync(path.join(REPO_ROOT, 'test/fixtures/sqlmesh-project'), root, { recursive: true });
+    openWorkspace(root);
+    vscode.workspace.isTrusted = false;
+    await activate(context);
+    await vscode.commands.executeCommand('erdStudio.refreshManifest');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Trust this workspace'));
   });
 });
