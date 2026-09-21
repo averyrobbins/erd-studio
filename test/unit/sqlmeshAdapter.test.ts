@@ -31,6 +31,26 @@ function editArtifact(fn: (s: any) => void) {
   fs.writeFileSync(adapter.artifactPath, JSON.stringify(s)); adapter.invalidate();
 }
 
+it('resolves exported source paths and reports missing or unavailable definitions', async () => {
+  await adapter.load();
+  expect(adapter.resolveSourceFile('fct_order')).toBe(fs.realpathSync(path.join(root, 'models/fct_order.sql')));
+  expect(() => adapter.resolveSourceFile('unknown')).toThrow('No source file');
+  fs.rmSync(path.join(root, 'models/fct_order.sql'));
+  expect(() => adapter.resolveSourceFile('fct_order')).toThrow('unavailable');
+});
+
+it('refuses a source symlink replaced with a target outside the project', async () => {
+  await adapter.load();
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'erd-outside-source-'));
+  try {
+    const file = path.join(outside, 'unrelated.sql');
+    fs.writeFileSync(file, 'select 1');
+    fs.rmSync(path.join(root, 'models/fct_order.sql'));
+    fs.symlinkSync(file, path.join(root, 'models/fct_order.sql'));
+    expect(() => adapter.resolveSourceFile('fct_order')).toThrow('inside this project');
+  } finally { fs.rmSync(outside, { recursive: true, force: true }); }
+});
+
 describe('SQLMesh project detection', () => {
   it('discovers a nested native project and respects an explicit provider', () => {
     expect(detectProjectProvider(root)).toBe('sqlmesh');

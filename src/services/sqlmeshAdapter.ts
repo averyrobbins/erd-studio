@@ -7,7 +7,7 @@ import type { DisplayDomain, ExistingModelPreview } from '../types/display';
 import type { SemanticModel, UnifiedDomain } from '../types/semantic';
 import type { IdentifierFolding } from '../types/naming';
 import type { ProjectAdapter, ProjectMetadata } from './projectAdapter';
-import { findByIdentifier, logicalSpelling, sameIdentifier } from './identifierMatching';
+import { assertLogicalColumnMapping, findByIdentifier, logicalSpelling } from './identifierMatching';
 
 const MAX_BYTES = 32 * 1024 * 1024;
 const aliasPattern = /^[a-z][a-z0-9_]*$/;
@@ -195,6 +195,24 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
         ...(w.diagnostic ? { diagnostic: w.diagnostic } : {}) } } : {}) };
   }
   getModel(name: string): ProjectModel | undefined { return this.snapshot?.models.find(m => m.name === name); }
+  assertWritableModel(name: string): void {
+    const model = this.getModel(name);
+    if (model) assertLogicalColumnMapping(model.name, model.columns, foldingOf(model));
+  }
+  /** Resolve only the exported source, within this project's real filesystem root. */
+  resolveSourceFile(name: string): string {
+    const source = this.getModel(name)?.sourcePath;
+    if (!source) throw new Error(`No source file is available for SQLMesh model ${name}. Refresh metadata if the model moved.`);
+    const file = path.join(this.root, source);
+    let real: string;
+    try { real = fs.realpathSync(file); }
+    catch { throw new Error(`Source file ${source} is unavailable. Refresh metadata if the model moved.`); }
+    const rel = path.relative(fs.realpathSync(this.root), real);
+    if (!rel || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel) || !fs.statSync(real).isFile()) {
+      throw new Error('The SQLMesh source file must be a file inside this project.');
+    }
+    return real;
+  }
   /**
    * Cardinality from single-column uniqueness evidence. Column names may be
    * given in either spelling — the export's or the logical design's — so
@@ -203,7 +221,9 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
   relationshipCardinality(fromModel: string, fromColumn: string, toModel: string, toColumn: string) {
     const one = (name: string, col: string) => {
       const model = this.getModel(name);
-      return !!model && model.uniqueKeys.some(k => k.length === 1 && sameIdentifier(k[0], col, foldingOf(model)));
+      if (!model) return false;
+      const column = findByIdentifier(model.columns, col, foldingOf(model));
+      return !!column && model.uniqueKeys.some(k => k.length === 1 && k[0] === column.name);
     };
     return one(fromModel, fromColumn)
       ? (one(toModel, toColumn) ? 'one-to-one' as const : 'one-to-many' as const)
@@ -217,6 +237,7 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
   seedModel(name: string): SemanticModel | undefined {
     const m = this.getModel(name);
     if (!m) return undefined;
+    this.assertWritableModel(name);
     const folding = foldingOf(m);
     return { name: m.name, schema: m.schema, description: m.description,
       columns: m.columns.map(c => ({ name: logicalSpelling(c.name, folding), dataType: c.dataType ?? 'unknown', description: c.description })) };
@@ -304,6 +325,7 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
         else columns.push({ ...c });
       }
       return { name: logical.name, schema: actual.schema, description: actual.description,
+        ...(actual.sourcePath ? { sourcePath: actual.sourcePath } : {}),
         qualifiedName: actual.id, columnsKnown: actual.columnsKnown || warehouse?.status === 'observed', existsInProject: true, warehouse,
         identifierFolding: folding,
         rationale: logical.rationale, grain: logical.grain, modelRole: logical.modelRole,

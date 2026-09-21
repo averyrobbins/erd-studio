@@ -81,6 +81,8 @@ export interface PhysicalProvenance {
 
 /** Model ready for webview display. */
 export interface DisplayModel {
+  /** Source location from the project adapter; never a path supplied by the webview. */
+  sourcePath?: string;
   warehouse?: import('./project').WarehouseModelObservation;
   qualifiedName?: string;
   columnsKnown?: boolean;

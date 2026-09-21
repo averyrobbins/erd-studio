@@ -17,6 +17,7 @@ import { RoleEditor } from './RoleEditor';
 import { ColumnEditor } from './ColumnEditor';
 import { useEditorStore } from '../../store/editorStore';
 import { useVsCodeApi } from '../../hooks/useVsCodeApi';
+import { useSend } from '../../hooks/useMessageBus';
 import type { DisplayRelationship, PhysicalColumnSource, PhysicalProvenance } from '../../../src/types/display';
 import type { FkEdgeData } from '../../types/graph';
 import './DetailPanel.css';
@@ -69,6 +70,7 @@ function describeProvenance(provenance: PhysicalProvenance, untyped: number): st
 // ---------------------------------------------------------------------------
 
 export function DetailPanel() {
+  const send = useSend();
   const vscode = useVsCodeApi();
   const domain = useEditorStore((s) => s.domain);
   const existingModels = useEditorStore((s) => s.existingModels);
@@ -309,6 +311,13 @@ export function DetailPanel() {
       {/* Metadata */}
       <div className="detail-panel__section">
         <div className="detail-panel__metadata">
+          {model.sourcePath && <div className="detail-panel__metadata-row">
+            <span className="detail-panel__label">Source</span>
+            <button className="detail-panel__source-link" title={model.sourcePath}
+              onClick={() => send({ type: 'openModelSource', payload: { modelName: model.name } })}>
+              Open model source
+            </button>
+          </div>}
           {model.warehouse && <div className="detail-panel__metadata-row">
             <span className="detail-panel__label">Warehouse</span>
             <span className="detail-panel__value">{model.warehouse.status}{model.warehouse.relation && `: ${model.warehouse.relation}`}

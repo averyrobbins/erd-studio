@@ -10,7 +10,7 @@ import { columnKey, modelKey, relationshipKey, deriveColumnAction, deriveRelatio
   resolveGroundTruthDataType } from '../types/syncPlan';
 import type { GroundTruth, ColumnResolution, RelationshipResolution } from '../types/syncPlan';
 import type { IdentifierFolding } from '../types/naming';
-import { findByIdentifier, logicalSpelling, sameIdentifier } from './identifierMatching';
+import { assertLogicalColumnMapping, findByIdentifier, logicalSpelling, sameIdentifier } from './identifierMatching';
 
 /** How each physical model folds identifier case; exact where the export does not say. */
 export function foldingByModel(physical: DisplayDomain): (modelName: string) => IdentifierFolding {
@@ -123,6 +123,9 @@ export function buildSqlmeshSyncPlan(options: {
   for (const name of names) {
     const m = snapshot.models.find(model => model.name === name);
     if (!m) throw new Error(`Missing SQLMesh binding for ${name}. Refresh metadata after binding this model.`);
+    assertLogicalColumnMapping(name, m.columns, m.identifierFolding ?? 'exact');
+    const observed = snapshot.warehouse?.models.find(model => model.id === m.id);
+    if (observed?.status === 'observed') assertLogicalColumnMapping(name, observed.columns, m.identifierFolding ?? 'exact');
     if (direction === 'logical-to-source' && (!m.sourcePath?.endsWith('.sql') || ['SEED', 'EXTERNAL', 'EMBEDDED'].includes(m.kind))) {
       throw new Error(`Source edits for ${name} (${m.kind}) need a manual workflow; this sync supports SQL model files.`);
     }
@@ -149,6 +152,14 @@ export function applySqlmeshLogicalPlan(plan: SqlmeshSyncPlan, domain: UnifiedDo
 } {
   if (plan.direction !== 'metadata-to-logical') throw new Error('This plan requires assisted source edits.');
   const foldingOf = foldingByModel(physical);
+  // Validate before producing any patch, including when applying a previously
+  // reviewed plan or when only a relationship is selected.
+  const affected = new Set([...plan.columns.map(c => c.modelName),
+    ...plan.relationships.flatMap(r => [r.fromModel, r.toModel])]);
+  for (const name of affected) {
+    assertLogicalColumnMapping(name, physical.models.find(m => m.name === name)?.columns ?? [], foldingOf(name));
+    assertLogicalColumnMapping(name, domain.logical.models.find(m => m.name === name)?.columns ?? [], 'exact');
+  }
   const models = structuredClone(domain.logical.models);
   const changed = new Set<string>();
   let relationships = structuredClone(domain.logical.relationships);

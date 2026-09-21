@@ -6,6 +6,7 @@ import { useEditorStore } from '../../webview/store/editorStore';
 import { DiscrepancyPanel } from '../../webview/components/DiscrepancyPanel/DiscrepancyPanel';
 import { SyncMergeModal } from '../../webview/components/SyncMergeModal/SyncMergeModal';
 import { PhysicalSourceNotice, formatWhen } from '../../webview/components/Canvas/PhysicalSourceNotice';
+import { DetailPanel } from '../../webview/components/DetailPanel/DetailPanel';
 import { compare } from '../../src/services/discrepancyService';
 import type { DisplayDomain } from '../../src/types/display';
 
@@ -23,6 +24,15 @@ beforeEach(() => {
     syncMode: false, syncSelections: {}, syncPlanGenerated: null, manifestStale: false });
 });
 afterEach(cleanup);
+
+it.each(['logical', 'physical'] as const)('offers source navigation from the %s details panel using model identity', stage => {
+  const domain = structuredClone(useEditorStore.getState().domain!);
+  domain.stage = stage; domain.models[0].sourcePath = 'models/orders.sql';
+  useEditorStore.setState({ domain, selectedNode: 'orders', detailPanelOpen: true });
+  render(<DetailPanel />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open model source' }));
+  expect(post).toHaveBeenCalledWith({ type: 'openModelSource', payload: { modelName: 'orders' } });
+});
 
 it('enables native sync and selects the actual displayed stage when comparing from Physical', () => {
   render(<><DiscrepancyPanel /><SyncMergeModal /></>);

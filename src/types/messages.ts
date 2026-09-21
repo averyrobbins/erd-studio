@@ -776,6 +776,7 @@ export interface RemoveAnnotationsMessage {
 
 /** Union of all messages the webview can send to the extension. */
 export type WebviewMessage =
+  | { type: 'openModelSource'; payload: { modelName: string } }
   | ReadyMessage
   | DismissWelcomeMessage
   | AddModelMessage

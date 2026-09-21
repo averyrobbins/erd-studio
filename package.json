@@ -446,6 +446,7 @@
     "vscode:prepublish": "npm run package",
     "compile": "tsc --noEmit && tsc --noEmit -p tsconfig.webview.json",
     "test": "vitest run",
+    "test:host": "node scripts/test-extension-host.cjs",
     "test:watch": "vitest",
     "regen-fixtures": "tsx scripts/regen-fixtures.ts"
   },

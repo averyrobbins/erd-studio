@@ -53,11 +53,18 @@ it.each([false, true])('applies authoritative types in either comparison directi
 
 it('adds observed columns with descriptions without inventing keys', async () => {
   const { domain, physical, logical, plan } = await setup();
-  physical.models[0].columns.push({ name: 'new:col', dataType: 'TEXT', description: 'Source description', isPrimaryKey: false, isForeignKey: false });
-  const prepared = plan({ [columnKey('dim_customer', 'new:col')]: 'physical' });
+  physical.models[0].columns.push({ name: 'new_col', dataType: 'TEXT', description: 'Source description', isPrimaryKey: false, isForeignKey: false });
+  const prepared = plan({ [columnKey('dim_customer', 'new_col')]: 'physical' });
   const patch = applySqlmeshLogicalPlan(prepared, domain, physical);
-  expect(patch.models[0].columns!.at(-1)).toEqual({ name: 'new:col', dataType: 'TEXT', description: 'Source description' });
+  expect(patch.models[0].columns!.at(-1)).toEqual({ name: 'new_col', dataType: 'TEXT', description: 'Source description' });
   expect(compare(logical, physical).summary.missingColumns).toBe(1);
+});
+
+it('rejects an observed column outside the logical naming rules before producing a patch', async () => {
+  const { domain, physical, plan } = await setup();
+  physical.models[0].columns.push({ name: 'new:col', dataType: 'TEXT', description: '', isPrimaryKey: false, isForeignKey: false });
+  const prepared = plan({ [columnKey('dim_customer', 'new:col')]: 'physical' });
+  expect(() => applySqlmeshLogicalPlan(prepared, domain, physical)).toThrow('logical naming rules');
 });
 
 it('adds only selected audit-backed relationships and is idempotent', async () => {

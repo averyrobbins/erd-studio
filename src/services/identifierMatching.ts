@@ -12,6 +12,7 @@
  * mcp-server bundles).
  */
 import type { IdentifierFolding } from '../types/naming';
+import { COLUMN_NAME_PATTERN } from '../types/naming';
 
 /** The comparison key for `name` under `folding`. */
 export function foldIdentifier(name: string, folding: IdentifierFolding): string {
@@ -34,6 +35,29 @@ export function sameIdentifier(a: string, b: string, folding: IdentifierFolding)
  */
 export function logicalSpelling(name: string, folding: IdentifierFolding): string {
   return folding === 'exact' ? name : name.toLowerCase();
+}
+
+/**
+ * A read-only comparison can retain identifiers the logical schema cannot
+ * represent. Import and sync must stop before mapping them into an invalid
+ * design or confusing two distinct columns. Column bindings are not supported
+ * yet, so reject the affected model rather than guessing an alias.
+ */
+export function assertLogicalColumnMapping(
+  modelName: string, columns: readonly { name: string }[], folding: IdentifierFolding,
+): void {
+  const mapped = new Map<string, string>();
+  for (const column of columns) {
+    const name = logicalSpelling(column.name, folding);
+    if (!COLUMN_NAME_PATTERN.test(name)) {
+      throw new Error(`Cannot import or sync ${modelName}: column ${JSON.stringify(column.name)} cannot be represented by the logical naming rules. Use a manual workflow; explicit column bindings are not supported yet.`);
+    }
+    const previous = mapped.get(name);
+    if (previous !== undefined) {
+      throw new Error(`Cannot import or sync ${modelName}: columns ${JSON.stringify(previous)} and ${JSON.stringify(column.name)} collide as logical column ${JSON.stringify(name)}. Use a manual workflow; explicit column bindings are not supported yet.`);
+    }
+    mapped.set(name, column.name);
+  }
 }
 
 /**

@@ -816,3 +816,12 @@
 .detail-panel__grain-section:hover .detail-panel__rationale-edit-btn {
   opacity: 1;
 }
+.detail-panel__source-link {
+  color: var(--vscode-textLink-foreground, var(--vscode-editor-foreground));
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

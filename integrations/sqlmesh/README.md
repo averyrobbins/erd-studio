@@ -40,6 +40,11 @@ Alternatively, use the source workflow below.
    and choose **Add Existing Model → SQLMesh**. Switch to **Physical** or compare
    the stages. The supplied fixture already has an `orders` domain.
 
+Select a model and choose **Open model source** in its details panel to open the
+exported SQL/Python/source file from either stage. Generated models may share a
+source file. Models without an exported source location have no source button;
+missing files and links outside the project are rejected with a diagnostic.
+
 An exported snapshot can be viewed without Python. Opening a diagram, watching
 files, and MCP reads never launch the exporter. Source changes mark the snapshot
 stale; explicitly refresh it. Malformed replacement exports retain the last good
@@ -75,14 +80,20 @@ Column names are exported exactly as SQLMesh normalises them for the model's
 dialect (`customer_id` on DuckDB, `CUSTOMER_ID` on Snowflake, a quoted `"id"` as
 written), and each model records how its dialect folds unquoted identifiers
 (`identifierFolding`: `lower`, `upper` or `exact`, from SQLGlot's normalisation
-strategy). The logical design keeps typing columns lowercase: comparison, sync
-and Add Existing Model pair names exactly first and then by that folding, so a
+strategy). The logical design keeps typing columns lowercase: comparison
+pairs names exactly first and then by that folding, so a
 logical `customer_id` is the same column as Snowflake's `CUSTOMER_ID`, while a
 quoted `"id"` beside an unquoted `ID` stays a separate column. Whatever sync or
 import writes into the design takes the lowercase spelling wherever the engine
 folds case. Exports made before this field existed are matched exactly until
 refreshed; on case-sensitive dialects (ClickHouse, MySQL) an uppercase column
 name cannot be expressed in the design and is reported as a difference.
+Import and sync reject the affected model when distinct names would become the
+same logical name (for example `ID` and quoted `"id"`), or when a name cannot meet
+the logical naming rules. Both sync directions and automatically added relationships
+use this check before writing. Physical view remains available. Such models need a
+manual workflow until explicit column bindings are implemented; uniqueness evidence
+for one quoted column is never borrowed from its case-distinct sibling.
 
 For a single-column FK, copy [erd_relationship.sql](audits/erd_relationship.sql)
 into your project's `audits/` folder and attach it to the child model:
@@ -180,7 +191,7 @@ No sync operation runs SQLMesh `plan`, `apply`, `run`, migrations or warehouse D
 ## Current boundaries
 
 - This is not full dbt parity: composite FKs, automatic source rewrites, model-level
-  sync, model-source navigation, remote warehouse adapters and domain execution
+  sync, remote warehouse adapters and domain execution
   remain open. dbt commands are blocked on the native integration.
 - Model discovery covers SQL, seeds, external, Python/generated and disabled models
   as loaded by SQLMesh. Unknown schemas never become deletion suggestions.
@@ -217,3 +228,21 @@ database bytes, source drift, missing state, environment naming and lock release
 Regenerate the fixture with
 `export.py --project test/fixtures/sqlmesh-project` after changing its inputs.
 See [MCP instructions](../../mcp-server/README.md) for the separate build/smoke test.
+
+### Real VS Code host checks
+
+Run `npm run test:host` with VS Code's `code` command available and the pinned
+`.venv-sqlmesh` environment prepared above. Override `VSCODE_EXECUTABLE` and
+`SQLMESH_PYTHON` with absolute executable paths when needed. The runner builds and
+type-checks its tests, then launches separate VS Code windows with temporary copies
+of the dbt/SQLMesh fixtures, isolated settings, and an empty extensions directory.
+It leaves results and logs under the printed `/tmp/erd-host-*` paths. It installs
+no extension into your usual profile and starts no GitHub Actions.
+
+These checks use the production React webview with a test-only message bridge and
+real VS Code document, command, terminal and WorkspaceEdit APIs. They exercise
+native activation/refresh, both stages, comparisons, source navigation, sync/undo,
+stale-plan rejection and cancellation. An inert CLI probe verifies terminal arguments
+and the configured Python PATH; it makes no AI request. A real Claude-assisted source
+edit, Windows/macOS behavior, and production warehouses remain separate acceptance
+checks. Tested locally on Linux with VS Code 1.138.0.

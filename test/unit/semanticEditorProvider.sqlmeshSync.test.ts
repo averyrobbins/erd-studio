@@ -11,7 +11,7 @@ import { ManifestService } from '../../src/services/manifestService';
 import { YmlParserService } from '../../src/services/ymlParserService';
 import { TemplateService } from '../../src/services/templateService';
 import { SelectorsService } from '../../src/services/selectorsService';
-import { SqlmeshProjectAdapter } from '../../src/services/sqlmeshAdapter';
+import { SqlmeshProjectAdapter, snapshotIntegrity } from '../../src/services/sqlmeshAdapter';
 
 // The launch resolves `claude` on PATH; CI has no Claude Code, so the lookup is
 // stubbed while the environment assembly stays real.
@@ -48,6 +48,31 @@ beforeEach(async () => {
 });
 afterEach(() => { panel.dispose(); vi.restoreAllMocks(); fs.rmSync(root, { recursive: true, force: true }); });
 const error = () => (panel._postedMessages as any[]).filter(m => m.type === 'error').at(-1)?.payload.message;
+
+it.each(['logical', 'physical'] as const)('opens the bound model source from %s without modifying files', async stage => {
+  if (stage === 'physical') await panel._simulateMessage({ type: 'switchStage', payload: { stage } });
+  const open = vi.spyOn(vscode.window, 'showTextDocument');
+  const before = edits.mock.calls.length;
+  await panel._simulateMessage({ type: 'openModelSource', payload: { modelName: 'fct_order', path: '/unrelated/file' } });
+  expect(error()).toBeUndefined();
+  expect((open.mock.calls.at(-1)![0] as vscode.Uri).fsPath).toBe(path.join(root, 'models/fct_order.sql'));
+  expect(edits.mock.calls.length).toBe(before);
+});
+
+it('rejects an import with colliding identifiers before creating a logical model', async () => {
+  const file = path.join(root, '.erd-studio/sqlmesh.json');
+  const snapshot = JSON.parse(fs.readFileSync(file, 'utf8'));
+  snapshot.models.push({ ...snapshot.models[0], name: 'collision', id: '"memory"."analytics"."collision"',
+    identifierFolding: 'upper', columns: [{ name: 'ID', dataType: 'INT', description: '' }, { name: 'id', dataType: 'TEXT', description: '' }], uniqueKeys: [] });
+  snapshot.integrity = snapshotIntegrity(snapshot);
+  fs.writeFileSync(file, JSON.stringify(snapshot));
+  await provider.refreshAllOpenDomains();
+  const before = edits.mock.calls.length;
+  await panel._simulateMessage({ type: 'addExistingModel', payload: { modelName: 'collision' } });
+  expect(error()).toContain('collide');
+  expect(edits.mock.calls.length).toBe(before);
+  expect(fs.existsSync(path.join(root, '.erd-studio/logical-models/collision.yml'))).toBe(false);
+});
 async function prepare(stage: 'logical' | 'physical' = 'logical', truth = 'physical') {
   if (stage === 'physical') await panel._simulateMessage({ type: 'switchStage', payload: { stage } });
   await panel._simulateMessage({ type: 'toggleDiscrepancy', payload: { enabled: true, compareAgainst: stage === 'logical' ? 'physical' : 'logical' } });

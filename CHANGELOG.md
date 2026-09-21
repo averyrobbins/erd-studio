@@ -10,7 +10,18 @@ heading — `## Unreleased — 1.0.0` — and the workflow releases exactly that
 
 ## Unreleased
 
+### Fixed
+
+- **SQLMesh column identity:** import and sync now reject columns that would
+  collide or become uneditable in the logical design, including distinct `ID`
+  and quoted `"id"`. Physical view stays available, and uniqueness evidence for
+  these distinct columns is kept separate.
+
 ### Added
+
+- **Open SQLMesh model source:** select a model in either stage and open its
+  exported source file from the details panel. Missing source files and paths
+  outside the project are reported instead of guessing another model's file.
 
 - **SQLMesh integration preview:** detect native projects, explicitly export metadata
   through the project's Python environment, import models, and compare logical diagrams

@@ -165,3 +165,56 @@ it('matches exports that predate identifierFolding exactly, as before', async ()
   const report = compare(physical, logical);
   expect(report.summary.matchedColumns).toBe(0);
 });
+
+it.each(['lower', 'upper'] as const)('refuses importing distinct columns that collide under %s folding', async folding => {
+  makeSnowflake(s => {
+    const model = s.models.find((m: any) => m.name === 'fct_order');
+    model.identifierFolding = folding;
+    model.columns.push({ name: 'amount', dataType: 'VARCHAR', description: 'Quoted twin' });
+  });
+  const { physical } = await stages();
+  expect(physical.models.find(m => m.name === 'fct_order')!.columns.map(c => c.name)).toContain('amount');
+  expect(() => adapter.seedModel('fct_order')).toThrow(/AMOUNT.*amount.*collide/);
+});
+
+it.each(['physical', 'logical'] as const)('refuses a %s-authoritative plan for a colliding model', async truth => {
+  makeSnowflake(s => {
+    s.models.find((m: any) => m.name === 'fct_order').columns.push({ name: 'amount', dataType: 'DECIMAL(10, 2)', description: '' });
+  });
+  const { physical, logical } = await stages();
+  const report = compare(physical, logical);
+  expect(() => buildSqlmeshSyncPlan({ report, snapshot: adapter.getSnapshot()!, domainPath,
+    semanticDir: '.erd-studio', preconditions: {}, selections: { [columnKey('fct_order', 'AMOUNT')]: truth } })).toThrow('collide');
+});
+
+it('refuses a colliding physical patch even if a caller supplies an older plan', async () => {
+  makeSnowflake(s => { s.models.find((m: any) => m.name === 'fct_order').columns[2].dataType = 'TEXT'; });
+  const { physical, logical, unified } = await stages();
+  const plan = buildSqlmeshSyncPlan({ report: compare(physical, logical), snapshot: adapter.getSnapshot()!, domainPath,
+    semanticDir: '.erd-studio', preconditions: {}, selections: { [columnKey('fct_order', 'AMOUNT')]: 'physical' } });
+  physical.models.find(m => m.name === 'fct_order')!.columns.push({ ...physical.models[1].columns[0], name: 'amount' });
+  const before = structuredClone(unified);
+  expect(() => applySqlmeshLogicalPlan(plan, unified, physical)).toThrow('collide');
+  expect(unified).toEqual(before);
+});
+
+it.each(['UpperCase', 'has space', 'has-dash'])('refuses an uneditable exact column name %s during import', async name => {
+  makeSnowflake(s => {
+    const model = s.models.find((m: any) => m.name === 'fct_order');
+    model.identifierFolding = 'exact';
+    model.columns = [{ name, dataType: 'INT', description: '' }];
+    model.uniqueKeys = [];
+    s.relationships = [];
+  });
+  await adapter.load();
+  expect(() => adapter.seedModel('fct_order')).toThrow('logical naming rules');
+});
+
+it('keeps quoted-column uniqueness evidence separate from its folded twin', async () => {
+  makeSnowflake(s => {
+    s.models.find((m: any) => m.name === 'fct_order').columns.push({ name: 'order_id', dataType: 'INT', description: '' });
+  });
+  await adapter.load();
+  expect(adapter.relationshipCardinality('fct_order', 'ORDER_ID', 'dim_customer', 'CUSTOMER_ID')).toBe('one-to-one');
+  expect(adapter.relationshipCardinality('fct_order', 'order_id', 'dim_customer', 'CUSTOMER_ID')).toBe('many-to-one');
+});

@@ -120,7 +120,7 @@ whose lazy initialization can migrate state, and uses read-only DuckDB connectio
 Trusted config/macros still execute; arbitrary project Python is not sandboxed.
 
 Full parity still needs remote warehouse adapters, broader audit/composite-FK support,
-model creation/removal and generated-source workflows, direct source navigation,
+model creation/removal and generated-source workflows,
 domain execution planning, cross-platform tests and large-project validation.
 Freshness cannot detect external imports, environment variables, remote services or
 warehouse changes after the last explicit inspection. SQLMesh internal API usage
@@ -139,3 +139,34 @@ The rendered webview was checked for observation labels and both sync action pat
 VS Code host/Claude launching uses mocks; live installation and a real assistant
 source-edit session remain unverified. Deployments occurred only in disposable test
 databases. No user warehouse or SQLMesh project was deployed.
+
+## Review follow-ups and editor acceptance checks
+
+The integration branch includes the fixes recorded in
+[the review index](.planning/sqlmesh-review-handoffs.md): failed-stage recovery,
+narrower activation, FK audit dependencies, dialect folding, environment diagnostics,
+export integrity/cancellation, consistent input discovery and assistant environment handling.
+
+Further checks exposed a remaining identifier collision: importing `ID` and quoted
+`"id"` produced two logical `id` columns. Import and both sync directions now reject
+affected models before writing; incompatible logical names also receive a diagnostic.
+Physical browsing remains supported, and uniqueness evidence keeps case-distinct
+columns separate. Explicit column bindings remain a future feature.
+
+Model source navigation is now implemented from both stages using the exported
+source path, with filesystem bounds checks. `npm run test:host` adds repeatable
+local checks in actual VS Code using disposable fixture copies and isolated profiles.
+It exercises the production webview, activation/refresh, source navigation, stage
+switching, comparison, logical sync with native undo, stale-plan refusal, cancellation
+and terminal argument/environment handling. The terminal check uses an inert CLI
+probe, so it does not establish a successful real Claude source-edit session.
+
+Validation on Linux/VS Code 1.138.0: **1,664 JavaScript tests across 74 files**,
+**21 Python tests**, **10 real-host checks across SQLMesh and dbt**, TypeScript checks,
+development/production builds, MCP type-check/build/smoke checks and zero reported
+runtime dependency vulnerabilities. All project and warehouse tests use disposable
+copies/databases; the usual VS Code profile is unchanged.
+
+The next milestones are composite relationship/column bindings, reviewed domain
+execution, model creation/removal workflows and a selected remote warehouse adapter.
+Each needs explicit acceptance fixtures before claiming full feature parity.

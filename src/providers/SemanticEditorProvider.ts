@@ -97,7 +97,7 @@ import type { ProjectAdapter } from '../services/projectAdapter';
 import { SqlmeshProjectAdapter } from '../services/sqlmeshAdapter';
 import { buildSqlmeshSyncPlan, applySqlmeshLogicalPlan, captureSqlmeshInputs, assertSqlmeshPlanCurrent, foldingByModel } from '../services/sqlmeshSync';
 import type { SqlmeshSyncPlan } from '../services/sqlmeshSync';
-import { sameIdentifier } from '../services/identifierMatching';
+import { assertLogicalColumnMapping, sameIdentifier } from '../services/identifierMatching';
 import { assistantEnvironment, resolveExecutable } from '../services/assistantLaunch';
 import type { CatalogData } from '../types/catalog';
 import { OwnWriteTracker, ownWrites } from '../services/ownWriteTracker';
@@ -662,7 +662,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
         const NON_MUTATION_TYPES = new Set([
           'ready', 'updatePositions', 'switchStage', 'toggleDiscrepancy',
           'refreshManifest', 'dismissWelcome',
-          'viewFile', 'generateSyncPlan', 'applySqlmeshLogicalSync', 'runDbtCompile', 'launchClaudeSync',
+          'viewFile', 'openModelSource', 'generateSyncPlan', 'applySqlmeshLogicalSync', 'runDbtCompile', 'launchClaudeSync',
           'addAnnotation', 'updateAnnotation', 'removeAnnotation', 'removeAnnotations',
           'requestReload',
           'requestFeedbackContext', 'analyzeFeedback', 'setFeedbackProvider',
@@ -858,6 +858,17 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
           }
           case 'viewFile': {
             await vscode.commands.executeCommand('vscode.openWith', document.uri, 'default');
+            break;
+          }
+          case 'openModelSource': {
+            const payload = (message as { payload?: { modelName?: unknown } }).payload;
+            if (typeof payload?.modelName !== 'string' || validateModelNameSafety(payload.modelName)) {
+              throw new Error('Choose a valid model to open its source.');
+            }
+            if (!(this.projectAdapter instanceof SqlmeshProjectAdapter)) throw new Error('Source navigation requires native SQLMesh metadata.');
+            await this.projectAdapter.load();
+            const file = this.projectAdapter.resolveSourceFile(payload.modelName);
+            await vscode.window.showTextDocument(vscode.Uri.file(file), { preview: true, viewColumn: vscode.ViewColumn.Beside });
             break;
           }
           // --- Feedback dialog -------------------------------------------
@@ -1527,6 +1538,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     const models = domain.models.map((model) => {
+      const sourcePath = this.projectAdapter instanceof SqlmeshProjectAdapter ? this.projectAdapter.getModel(model.name)?.sourcePath : undefined;
       const fkCols = fkColumnsByModel.get(model.name) ?? new Set<string>();
       const columns = (model.columns ?? []).map((col) => ({
         name: col.name,
@@ -1541,6 +1553,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
 
       return {
         name: model.name,
+        ...(sourcePath ? { sourcePath } : {}),
         schema: model.schema ?? '',
         description: model.description ?? '',
         columns,
@@ -3088,6 +3101,10 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       const parsed = JSON.parse(text) as Record<string, unknown>;
       const section = this.getStageSection(parsed, stage);
 
+      if (this.projectAdapter instanceof SqlmeshProjectAdapter) {
+        await this.projectAdapter.load();
+        this.projectAdapter.assertWritableModel(payload.modelName);
+      }
       // V5: add model reference to domain (create model file from manifest if needed)
       if (this.isDomainV5(parsed)) {
         const modelNames = (section.models ?? []) as string[];
@@ -3144,6 +3161,10 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
             for (const test of relationshipTests) {
               if (test.fromModel !== payload.modelName && test.toModel !== payload.modelName) continue;
               if (!allNames.has(test.fromModel) || !allNames.has(test.toModel)) continue;
+              if (this.projectAdapter instanceof SqlmeshProjectAdapter) {
+                this.projectAdapter.assertWritableModel(test.fromModel);
+                this.projectAdapter.assertWritableModel(test.toModel);
+              }
               const alreadyExists = relationships.some(
                 (r) => r.fromModel === test.fromModel && r.fromColumn === test.fromColumn &&
                         r.toModel === test.toModel && r.toColumn === test.toColumn,
@@ -3247,6 +3268,10 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
           for (const test of relationshipTests) {
             if (test.fromModel !== payload.modelName && test.toModel !== payload.modelName) continue;
             if (!modelNames.has(test.fromModel) || !modelNames.has(test.toModel)) continue;
+            if (this.projectAdapter instanceof SqlmeshProjectAdapter) {
+              this.projectAdapter.assertWritableModel(test.fromModel);
+              this.projectAdapter.assertWritableModel(test.toModel);
+            }
             const alreadyExists = relationships.some(
               (r) => r.fromModel === test.fromModel && r.fromColumn === test.fromColumn &&
                       r.toModel === test.toModel && r.toColumn === test.toColumn,
@@ -3881,6 +3906,9 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     if (JSON.stringify(report) !== JSON.stringify(panel.lastDiscrepancyReport)) throw new Error('The comparison changed. Compare again before choosing resolutions.');
     const plan = buildSqlmeshSyncPlan({ report, selections, snapshot: context.snapshot,
       domainPath: context.domainPath, semanticDir: context.semanticDir, preconditions: context.preconditions });
+    for (const name of Object.keys(plan.modelContext)) {
+      assertLogicalColumnMapping(name, context.unified.logical.models.find(m => m.name === name)?.columns ?? [], 'exact');
+    }
     if (plan.direction === 'metadata-to-logical') {
       // Validate the complete patch before presenting it as executable.
       applySqlmeshLogicalPlan(plan, context.unified, context.physical);
