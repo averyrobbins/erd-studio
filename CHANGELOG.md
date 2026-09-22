@@ -12,6 +12,11 @@ heading — `## Unreleased — 1.0.0` — and the workflow releases exactly that
 
 ### Fixed
 
+- **SQLMesh automatic refresh:** an opt-in user setting refreshes source metadata
+  after file changes, coalesces saves, serializes exports and updates comparisons.
+  Logical/metadata writes do not trigger execution; deployment remains separate.
+- **PostgreSQL inspection:** read deployed SQLMesh environment schemas with
+  read-only transactions and restricted-role acceptance coverage, alongside DuckDB.
 - **SQLMesh column bindings:** optional per-model column aliases preserve quoted,
   case-distinct and otherwise invalid logical names across import, display,
   comparison, sync, relationship evidence, assistant plans and MCP output.

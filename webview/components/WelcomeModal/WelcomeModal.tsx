@@ -80,7 +80,7 @@ export function WelcomeModal() {
                   <strong>Physical</strong>
                   <span>
                     {isSqlmesh ? <>Read the saved SQLMesh export to see declared or inferred columns
-                    and audit relationships. Use Inspect SQLMesh Warehouse (DuckDB) for deployed
+                    and audit relationships. Use Inspect SQLMesh Warehouse for deployed
                     environment types, or Refresh Project Metadata for source-only data.
                     Compare stages and use Sync to reconcile selected differences.</> : <>Automatically read from your dbt project — see what's
                     actually there. Data types come from your .yml files, from a

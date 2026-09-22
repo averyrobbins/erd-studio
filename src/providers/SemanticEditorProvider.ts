@@ -1813,6 +1813,9 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       try {
         if (activeStage === 'physical') {
           await this.handleSwitchStage(panelKey, document, webview, 'physical');
+          const compareAgainst = this.openPanels.get(panelKey)?.lastCompareAgainst;
+          if (compareAgainst === 'logical') await this.handleToggleDiscrepancy(panelKey, document, webview,
+            { enabled: true, compareAgainst }, true);
         } else {
           await this.sendDomainData(document, webview, panelKey);
         }

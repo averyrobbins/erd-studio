@@ -37,7 +37,7 @@ const SOURCE_NAME: Record<PhysicalColumnSource, string> = {
   manifest: 'dbt manifest',
   'sqlmesh-declared': 'SQLMesh declarations (not warehouse observation)',
   'sqlmesh-inferred': 'SQLMesh inference (not warehouse observation)',
-  'sqlmesh-observed': 'DuckDB warehouse observation, with source-only columns retained',
+  'sqlmesh-observed': 'SQLMesh warehouse observation, with source-only columns retained',
   file: '.sql file only',
 };
 

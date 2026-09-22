@@ -140,6 +140,17 @@ const INPUT_DIRS = ['models', 'macros', 'audits', 'seeds', 'external_models'];
 const INPUT_ROOT_FILES = ['config.py', 'config.yaml', 'config.yml', 'schema.yaml', 'external_models.yaml'];
 const INPUT_SUFFIX = /\.(sql|py|yaml|yml|csv)$/;
 
+/** Simple watcher patterns avoid nested brace globs across VS Code platforms. */
+export function sqlmeshWatchPatterns(semanticDir: string): string[] {
+  return [...INPUT_DIRS.map(dir => `${dir}/**/*`), ...INPUT_ROOT_FILES, `${semanticDir}/sqlmesh*.json`];
+}
+
+export function isSqlmeshSourceInput(relative: string, semanticDir: string): boolean {
+  const parts = relative.split('/');
+  return relative === `${semanticDir}/sqlmesh-bindings.json` || INPUT_ROOT_FILES.includes(relative)
+    || (INPUT_DIRS.includes(parts[0]) && parts.slice(1, -1).every(p => !p.startsWith('.')) && INPUT_SUFFIX.test(relative));
+}
+
 /**
  * The project files whose bytes the exporter fingerprints, as POSIX paths
  * relative to `root`, sorted. Mirror of `input_files` in

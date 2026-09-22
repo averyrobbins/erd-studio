@@ -115,13 +115,49 @@ def readonly_duckdb_adapter(connection, root: Path):
                                default_catalog=file.stem), file.stem
 
 
+def readonly_postgres_adapter(connection):
+    """Use libpq read-only defaults before any query, without SQLMesh init hooks."""
+    import psycopg2
+    from psycopg2 import sql
+    from sqlmesh.core.engine_adapter.postgres import PostgresEngineAdapter
+
+    options = {key: getattr(connection, key) for key in (
+        "host", "user", "password", "port", "database", "keepalives_idle",
+        "connect_timeout", "sslmode", "application_name") if getattr(connection, key) is not None}
+    # Applies to implicit/autocommit statements and explicit adapter transactions.
+    # Trusted Python can still open its own connections; this is not a sandbox.
+    options["options"] = "-c default_transaction_read_only=on -c statement_timeout=30000 -c lock_timeout=5000"
+
+    def connect():
+        db = psycopg2.connect(**options)
+        try:
+            db.autocommit = True
+            if connection.role:
+                with db.cursor() as cursor:
+                    cursor.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(connection.role)))
+            return db
+        except Exception:
+            db.close()
+            raise
+
+    return PostgresEngineAdapter(connect, default_catalog=connection.database), connection.database
+
+
+def readonly_adapter(connection, root: Path):
+    if connection.type_ == "duckdb":
+        return readonly_duckdb_adapter(connection, root)
+    if connection.type_ == "postgres":
+        return readonly_postgres_adapter(connection)
+    raise InspectionUnavailable("Warehouse inspection supports local DuckDB files and PostgreSQL connections")
+
+
 def prepare_inspection(context, root: Path):
     """Load source models without opening SQLMesh's normal read/write connections."""
     if len(context.configs) != 1 or len(context.config.gateways) != 1:
-        raise InspectionUnavailable("Warehouse inspection currently supports single-project, single-gateway DuckDB projects")
+        raise InspectionUnavailable("Warehouse inspection currently supports single-project, single-gateway projects")
     if context.config.get_scheduler(context.gateway).type_ != "builtin":
         raise InspectionUnavailable("Warehouse inspection currently requires SQLMesh's built-in scheduler state")
-    adapter, catalog = readonly_duckdb_adapter(context.connection_config, root)
+    adapter, catalog = readonly_adapter(context.connection_config, root)
     context._engine_adapter = adapter
     # Avoid SQLMesh's catalog discovery opening connections or initializing state.
     context.__dict__["engine_adapters"] = {context.selected_gateway: adapter}
@@ -139,7 +175,7 @@ def inspect_warehouse(context, root: Path, environment: str, models: list[dict])
     state_adapter = None
     try:
         connection = context.config.get_state_connection(context.gateway) or context.connection_config
-        state_adapter, _ = readonly_duckdb_adapter(connection, root)
+        state_adapter, _ = readonly_adapter(connection, root)
         # Do NOT call context.state_reader/table_name: lazy state initialization can migrate.
         state = EngineAdapterStateSync(state_adapter, schema=context.config.get_state_schema(context.gateway),
                                       cache_dir=context.cache_dir)
@@ -160,12 +196,13 @@ def inspect_warehouse(context, root: Path, environment: str, models: list[dict])
             if model["kind"] in ("EMBEDDED", "EXTERNAL"):
                 observation.update(status="unsupported", diagnostic="Model has no managed environment relation")
             elif snapshot:
-                table = snapshot.qualified_view_name.table_for_environment(env.naming_info, dialect="duckdb")
-                observation["relation"] = table.sql(dialect="duckdb", identify=True)
+                dialect = context.engine_adapter.dialect
+                table = snapshot.qualified_view_name.table_for_environment(env.naming_info, dialect=dialect)
+                observation["relation"] = table.sql(dialect=dialect, identify=True)
                 try:
                     columns = context.engine_adapter.columns(table)
                     observation.update(status="observed", columns=[
-                        {"name": name, "dataType": dtype.sql(dialect="duckdb"), "description": ""}
+                        {"name": name, "dataType": dtype.sql(dialect=dialect), "description": ""}
                         for name, dtype in columns.items()])
                 except Exception:
                     # A permission/lock/query error is not evidence that a column was removed.
@@ -173,7 +210,7 @@ def inspect_warehouse(context, root: Path, environment: str, models: list[dict])
             result["models"].append(observation)
     except Exception as error:
         # Avoid persisting connection strings, credentials or raw driver errors in artifacts.
-        diagnostic = str(error) if isinstance(error, InspectionUnavailable) else "Warehouse/state metadata unavailable (database lock, missing file, permissions or incompatible SQLMesh state)"
+        diagnostic = str(error) if isinstance(error, InspectionUnavailable) else "Warehouse/state metadata unavailable (connection, lock, missing file, permissions or incompatible SQLMesh state)"
         # The whole inspection failed, so the reason is stated once at the top
         # level (where the canvas notice shows it) as well as on every model.
         result["diagnostic"] = diagnostic
@@ -359,7 +396,7 @@ def main() -> None:
     parser.add_argument("--semantic-dir", default=".erd-studio")
     parser.add_argument("--gateway")
     parser.add_argument("--config")
-    parser.add_argument("--environment", help="Opt in to read-only DuckDB inspection of a deployed environment")
+    parser.add_argument("--environment", help="Opt in to read-only DuckDB/PostgreSQL inspection of a deployed environment")
     args = parser.parse_args()
     root = args.project.resolve()
     semantic = (root / args.semantic_dir).resolve()

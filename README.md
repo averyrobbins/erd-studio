@@ -55,10 +55,11 @@ Each model shows where its shape came from, so a `varchar` on the canvas is neve
 
 This branch adds native SQLMesh import, Physical comparison, deterministic sync to
 logical models, and AI-assisted SQL source edits. A Python exporter runs only on an
-explicit metadata refresh or **Inspect SQLMesh Warehouse (DuckDB)**. Inspection is
+explicit metadata refresh, optional automatic source refresh, or **Inspect SQLMesh Warehouse**. Inspection is
 read-only and environment-aware; deployment is always separate. Saved diagrams and
 MCP reads need no Python process. This preview is available from source, not the
-published extension. Remote warehouses and full dbt parity remain future work.
+published extension. DuckDB and PostgreSQL inspection are supported; remaining
+parity work is tracked in the setup guide.
 See the [setup guide and limitations](integrations/sqlmesh/README.md).
 
 ## Get started

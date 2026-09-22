@@ -23,7 +23,8 @@ import { CatalogService } from './services/catalogService';
 import { getErdStudioSetting } from './services/configService';
 import { detectProjectProvider, resolveProjectRoot } from './services/projectDetection';
 import { DbtProjectAdapter } from './services/projectAdapter';
-import { SqlmeshProjectAdapter } from './services/sqlmeshAdapter';
+import { SqlmeshProjectAdapter, isSqlmeshSourceInput, sqlmeshWatchPatterns } from './services/sqlmeshAdapter';
+import { SqlmeshRefreshCoordinator } from './services/sqlmeshAutoRefresh';
 import { refreshSqlmesh, exportTimeoutMs } from './services/sqlmeshRefresh';
 import { readDbtProjectConfig } from './services/dbtProjectConfig';
 import { ModelLibraryTreeProvider, type ModelLibraryNode } from './providers/ModelLibraryTreeProvider';
@@ -531,17 +532,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // -------------------------------------------------------------------------
   const fileWatcherService = new FileWatcherService(workspaceRoot, semanticDir, dbtConfig);
 
+  const performSqlmeshRefresh = async (inspectWarehouse: boolean, signal: AbortSignal) => {
+    await refreshSqlmesh({ root: workspaceRoot, semanticDir,
+      exporter: path.join(context.extensionUri.fsPath, 'dist', 'sqlmesh_export.py'),
+      python: getErdStudioSetting('sqlmesh.pythonPath', ''),
+      gateway: getErdStudioSetting('sqlmesh.gateway', ''), config: getErdStudioSetting('sqlmesh.config', ''),
+      environment: inspectWarehouse ? (getErdStudioSetting('sqlmesh.environment', 'prod') || 'prod') : undefined,
+      timeoutMs: exportTimeoutMs(getErdStudioSetting<number>('sqlmesh.exportTimeoutSeconds', 600)), signal,
+    });
+    projectAdapter.invalidate();
+    await projectAdapter.load();
+    if (projectAdapter instanceof SqlmeshProjectAdapter && projectAdapter.status !== 'ready') {
+      throw new Error(projectAdapter.diagnostics.join('\n') || 'SQLMesh metadata is not current. Retry refresh.');
+    }
+    await editorProvider.refreshAllOpenDomains();
+  };
+  let lastAutomaticError = '';
+  const sqlmeshRefreshCoordinator = new SqlmeshRefreshCoordinator({
+    enabled: () => projectProvider === 'sqlmesh' && vscode.workspace.isTrusted && getErdStudioSetting('sqlmesh.autoRefresh', false),
+    refresh: async signal => { await performSqlmeshRefresh(false, signal); lastAutomaticError = ''; },
+    onError: error => {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message !== lastAutomaticError) {
+        lastAutomaticError = message;
+        void vscode.window.showWarningMessage(`Automatic SQLMesh refresh failed. ${message}`);
+      }
+    },
+  });
+  context.subscriptions.push(sqlmeshRefreshCoordinator);
+
   if (projectProvider === 'sqlmesh') {
-    // Watch inputs and the inert export; never execute project code from a watcher.
-    const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(workspaceRoot,
-      `{${semanticDir}/sqlmesh*.json,config.py,config.yaml,config.yml,external_models.yaml,schema.yaml,{models,macros,audits,seeds,external_models}/**/*.{sql,py,yaml,yml,csv}}`));
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const changed = () => {
+    const changed = (uri: vscode.Uri) => {
       clearTimeout(timer);
       timer = setTimeout(() => { projectAdapter.invalidate(); void editorProvider.refreshAllOpenDomains(); }, 300);
+      const relative = path.relative(workspaceRoot, uri.fsPath).split(path.sep).join('/');
+      // Export/plan/logical-file changes never cause an exporter loop. Source
+      // execution is opt-in and checked again after the debounce and in trust.
+      if (isSqlmeshSourceInput(relative, semanticDir)) sqlmeshRefreshCoordinator.changed();
     };
-    context.subscriptions.push(watcher, watcher.onDidChange(changed), watcher.onDidCreate(changed), watcher.onDidDelete(changed),
-      { dispose() { clearTimeout(timer); } });
+    for (const pattern of sqlmeshWatchPatterns(semanticDir)) {
+      const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(workspaceRoot, pattern));
+      context.subscriptions.push(watcher, watcher.onDidChange(changed), watcher.onDidCreate(changed), watcher.onDidDelete(changed));
+    }
+    context.subscriptions.push({ dispose() { clearTimeout(timer); } },
+      vscode.workspace.onDidChangeConfiguration(event => {
+        if (!event.affectsConfiguration('erdStudio.sqlmesh')) return;
+        sqlmeshRefreshCoordinator.disableAutomatic();
+        sqlmeshRefreshCoordinator.changed();
+      }));
   }
 
   // Manifest changed → refresh open editors
@@ -1058,7 +1097,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ),
     vscode.commands.registerCommand('erdStudio.inspectSqlmeshWarehouse', async () => {
       if (projectAdapter.provider !== 'sqlmesh') {
-        void vscode.window.showInformationMessage('Warehouse inspection is available for native SQLMesh DuckDB projects.');
+        void vscode.window.showInformationMessage('Warehouse inspection is available for native SQLMesh DuckDB or PostgreSQL projects.');
         return;
       }
       await vscode.commands.executeCommand('erdStudio.refreshManifest', true);
@@ -1076,20 +1115,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // very end, so a cancelled or timed-out run leaves the previous export intact.
             const controller = new AbortController();
             token.onCancellationRequested(() => controller.abort());
-            await refreshSqlmesh({ root: workspaceRoot, semanticDir,
-              exporter: path.join(context.extensionUri.fsPath, 'dist', 'sqlmesh_export.py'),
-              python: getErdStudioSetting('sqlmesh.pythonPath', ''),
-              gateway: getErdStudioSetting('sqlmesh.gateway', ''), config: getErdStudioSetting('sqlmesh.config', ''),
-              environment: inspectWarehouse === true ? (getErdStudioSetting('sqlmesh.environment', 'prod') || 'prod') : undefined,
-              timeoutMs: exportTimeoutMs(getErdStudioSetting<number>('sqlmesh.exportTimeoutSeconds', 600)),
-              signal: controller.signal,
-            });
-            projectAdapter.invalidate();
-            await projectAdapter.load();
-            if (projectAdapter.status !== 'ready') {
-              throw new Error(projectAdapter.diagnostics.join('\n') || 'SQLMesh metadata is not current. Retry refresh.');
-            }
-            await editorProvider.refreshAllOpenDomains();
+            await sqlmeshRefreshCoordinator.run(signal => performSqlmeshRefresh(inspectWarehouse === true, signal), false, controller.signal);
             void vscode.window.showInformationMessage('SQLMesh metadata refreshed. Graphs updated.');
           });
         } catch (error) {

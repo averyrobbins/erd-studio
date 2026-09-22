@@ -3,7 +3,7 @@
 This branch adds native SQLMesh discovery, model import, logical editing, Physical
 view, comparison, AI instructions, and read-only MCP inspection. dbt keeps its
 existing integration. Physical combines **source metadata** with optional, explicitly
-requested DuckDB observations. Native sync updates the logical design deterministically
+requested DuckDB or PostgreSQL observations. Native sync updates the logical design deterministically
 or prepares source edits for an assistant. Deployment remains a separate user action.
 
 ## Try it
@@ -45,9 +45,20 @@ exported SQL/Python/source file from either stage. Generated models may share a
 source file. Models without an exported source location have no source button;
 missing files and links outside the project are rejected with a diagnostic.
 
-An exported snapshot can be viewed without Python. Opening a diagram, watching
-files, and MCP reads never launch the exporter. Source changes mark the snapshot
-stale; explicitly refresh it. Malformed replacement exports retain the last good
+An exported snapshot can be viewed without Python. By default, opening a diagram,
+watching files, and MCP reads never launch the exporter. Source changes mark the
+snapshot stale; explicitly refresh it.
+
+For automatic source metadata sync, enable **User Settings →
+`erdStudio.sqlmesh.autoRefresh`** in trusted SQLMesh workspaces. Source/config/binding
+changes are debounced for one second. Only one export runs at a time; edits during
+an export schedule one follow-up. Logical files and generated snapshots do not
+trigger exports. Successful refreshes update both stages and open comparisons;
+changed comparisons clear old sync selections. Failures preserve the last good
+snapshot and report a warning; another source save retries. Disabling the setting
+cancels pending/running automatic exports. Automatic refresh never edits source,
+deploys, or inspects the warehouse, and clears prior warehouse observations.
+MCP remains an inert reader regardless of this setting. Malformed replacement exports retain the last good
 snapshot with a warning; deleting the export clears it.
 
 For command-line export, use absolute paths:
@@ -133,23 +144,27 @@ audits. Lineage, `grain`, and `references` do not automatically become ERD edges
 Other custom audits, filtered uniqueness, and unresolved arguments are diagnosed
 or omitted. Copying the convention does not run the audit.
 
-## Inspect a deployed DuckDB environment
+## Inspect a deployed DuckDB or PostgreSQL environment
 
 Set `erdStudio.sqlmesh.environment` (default `prod`), then run **ERD Studio: Inspect
-SQLMesh Warehouse (DuckDB)**. CLI equivalent: add `--environment dev` to the export
+SQLMesh Warehouse**. CLI equivalent: add `--environment dev` to the export
 command. **Refresh Project Metadata** returns to source-only mode and clears previous
 observations; repeat inspection for a new warehouse snapshot.
 
-This first implementation supports one native project, one gateway, the built-in
-scheduler, and plain local DuckDB files for both warehouse and state (a separate
-state file is supported). In-memory databases, remote engines, attachments,
-connection hooks/extensions and multiple gateways are rejected. Close any process
+Inspection supports one native project, one gateway and the built-in scheduler.
+Warehouse/state connections can be plain local DuckDB files or PostgreSQL (including
+separate state connections). In-memory DuckDB, attachments, DuckDB connection hooks,
+extensions, other remote engines and multiple gateways are rejected. Close any process
 holding a writable DuckDB connection before inspecting; database locks are reported
 as unavailable metadata.
 
 The exporter reads SQLMesh's existing, finalized environment state and resolves its
 promoted models to consumer relations, honoring environment suffixes/catalog mapping.
-It opens DuckDB with `read_only=True`, bypasses normal connection setup, never uses
+It opens DuckDB with `read_only=True`. PostgreSQL connections set read-only transaction
+defaults before the first query, with statement/lock timeouts, and honor configured
+authentication, SSL mode and optional role. Use an account with only CONNECT, schema
+USAGE and SELECT on SQLMesh state and consumer relations. Both adapters bypass
+normal connection setup and never use
 SQLMesh's state accessor that can initialize/migrate state, and closes connections.
 It does not query model rows, deploy models or run audits. Project config/macros
 still execute as trusted Python, so this is not a sandbox for arbitrary project code.
@@ -209,7 +224,7 @@ No sync operation runs SQLMesh `plan`, `apply`, `run`, migrations or warehouse D
 ## Current boundaries
 
 - This is not full dbt parity: composite FKs, automatic source rewrites, model-level
-  sync, remote warehouse adapters and domain execution
+  sync, additional warehouse adapters and domain execution
   remain open. dbt commands are blocked on the native integration.
 - Model discovery covers SQL, seeds, external, Python/generated and disabled models
   as loaded by SQLMesh. Unknown schemas never become deletion suggestions.
@@ -222,7 +237,9 @@ No sync operation runs SQLMesh `plan`, `apply`, `run`, migrations or warehouse D
   contract. Credentials/config values/query bodies are not
   serialized. Names and descriptions remain project data; review before sharing.
 - Verified on Linux/Python 3.13 with SQLMesh **0.236.1**, SQLGlot **30.8.0**, DuckDB
-  **1.5.5**. Other versions/platforms and production scale remain unverified.
+  **1.5.5**; PostgreSQL **17.11** over loopback TCP with psycopg2 **2.9.11**.
+  Managed remote services, TLS deployments, other versions/platforms and production
+  scale remain unverified.
   Source `_path`, context adapter injection and the state reader are internal
   SQLMesh interfaces isolated in the exporter; upgrades need regression tests.
 
@@ -265,3 +282,25 @@ and the configured Python PATH; it makes no AI request. A separate [installed-ed
 verified actual Claude source edits, canvas-focused undo and DuckDB inspection
 without a test bridge. Windows/macOS and production warehouses remain unverified.
 Tested locally on Linux with VS Code 1.138.0.
+
+### PostgreSQL acceptance
+
+Install `requirements-postgres-test.txt` in the test environment. On a **disposable**
+PostgreSQL cluster, run:
+
+```sh
+ERD_TEST_POSTGRES_DSN='host=/tmp port=55437 user=erd_admin dbname=postgres' \
+  .venv-sqlmesh/bin/python -m unittest discover -s integrations/sqlmesh \
+  -p test_warehouse_postgres.py -v
+```
+
+The test account needs CREATE DATABASE/ROLE solely to create isolated fixtures;
+each test removes its random database and roles. The inspection itself uses a
+SELECT-only role. Tests cover quoted bindings, deployed/source drift, missing state,
+unknown environments, permission failures and database-enforced write rejection.
+Without the DSN these optional tests skip; ordinary DuckDB tests still run.
+PostgreSQL was built under `/tmp` from the official 17.11 source archive, with its
+published SHA-256 verified; no system package or privileged service was changed.
+
+See [SQLMesh PostgreSQL configuration](https://sqlmesh.readthedocs.io/en/stable/integrations/engines/postgres/)
+and [PostgreSQL read-only transaction defaults](https://www.postgresql.org/docs/17/runtime-config-client.html).

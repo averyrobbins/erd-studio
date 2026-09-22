@@ -69,3 +69,17 @@ correct native source path. Case-distinct sibling and relationship mappings are
 covered by adapter/provider tests; MCP smoke checks retain native identifiers.
 The run exposed stale sync selections after a changed comparison; the store now
 clears selections and the prepared plan only when the report changes.
+
+## Automation and PostgreSQL follow-up
+
+With the opt-in user setting enabled in the isolated installed VSIX, source edits
+changed the saved snapshot and an already open Logical comparison automatically.
+A subsequent source edit updated the Physical comparison to All matched, retaining
+the native-name hint. No toolbar refresh was used. DuckDB bytes stayed identical.
+The real-host suite also verifies the registered source watcher triggers export.
+
+Five opt-in PostgreSQL tests passed against a disposable 17.11 cluster over TCP:
+SELECT-only inspection, quoted bindings, drift, missing state/environment,
+permission failures, and a rejected CREATE TABLE even with owner credentials when
+using the read-only adapter. Together with DuckDB/export tests, 29 Python tests
+pass. Cloud/TLS behavior is not covered by this loopback acceptance.

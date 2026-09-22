@@ -65,7 +65,7 @@ export const PhysicalSourceNotice: React.FC = () => {
             ? warehouse.diagnostic
               ? ` Warehouse inspection of ${warehouse.environment} at ${formatWhen(warehouse.observedAt)} failed: ${warehouse.diagnostic} Types shown are declared or inferred from source.`
               : ` Warehouse ${warehouse.environment}: ${warehouse.observed}/${warehouse.total} models observed at ${formatWhen(warehouse.observedAt)}. Observed types take precedence; source-only columns are retained. Relationships come from source audits.`
-            : ' Types are declared or inferred from source. Use Inspect SQLMesh Warehouse (DuckDB) for deployed types.'}
+            : ' Types are declared or inferred from source. Use Inspect SQLMesh Warehouse for deployed types.'}
           {integration.diagnostics.length > 0 && <details><summary>{integration.diagnostics.length} diagnostic(s)</summary>
             <ul>{integration.diagnostics.map((d, i) => <li key={i}>{d}</li>)}</ul></details>}
         </div>

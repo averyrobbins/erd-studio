@@ -34,7 +34,7 @@ export const HARNESS_VERSION = '17';
  * `SQLMESH_SYNC_INSTRUCTIONS` change. A file's provider marker decides which
  * version it is compared against.
  */
-export const SQLMESH_HARNESS_VERSION = '3';
+export const SQLMESH_HARNESS_VERSION = '4';
 
 /** The harness version the given provider's generated files carry. */
 export function harnessVersionFor(provider: 'dbt' | 'sqlmesh'): string {
@@ -787,10 +787,13 @@ export class HarnessService {
 
 The Physical view reads .erd-studio/sqlmesh.json, a generated source-metadata export.
 Optional warehouse observations are separate from source metadata. Inspect SQLMesh Warehouse
-reads a selected DuckDB environment without deploying. Source-only columns are retained;
+reads a selected DuckDB or PostgreSQL environment without deploying. Source-only columns are retained;
 observed types take precedence. Check model observation status and timestamp. Do not edit the export.
 Use ERD Studio: Refresh Project Metadata to regenerate it in a trusted workspace.
 The exporter executes project configuration/macros but never plans or applies changes.
+The optional user setting erdStudio.sqlmesh.autoRefresh runs source-only refresh
+after input edits in trusted workspaces. It is off by default, never deploys, and
+clears previous warehouse observations. MCP never launches the exporter.
 
 Logical aliases map to canonical SQLMesh names in .erd-studio/sqlmesh-bindings.json:
 {"version":1,"models":{"dim_customer":"analytics.dim_customer"}}

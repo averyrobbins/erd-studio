@@ -81,7 +81,7 @@
       },
       {
         "command": "erdStudio.inspectSqlmeshWarehouse",
-        "title": "Inspect SQLMesh Warehouse (DuckDB)",
+        "title": "Inspect SQLMesh Warehouse",
         "category": "ERD Studio"
       },
       {
@@ -428,13 +428,19 @@
         "erdStudio.sqlmesh.environment": {
           "type": "string",
           "default": "prod",
-          "description": "Deployed SQLMesh environment to inspect with Inspect SQLMesh Warehouse. Inspection is read-only and supports local DuckDB files."
+          "description": "Deployed SQLMesh environment to inspect with Inspect SQLMesh Warehouse. Inspection is read-only and supports local DuckDB files and PostgreSQL."
         },
         "erdStudio.sqlmesh.exportTimeoutSeconds": {
           "type": "number",
           "default": 600,
           "minimum": 30,
           "description": "Seconds to allow Refresh Project Metadata / Inspect SQLMesh Warehouse before the exporter is stopped. Loading a large SQLMesh project and inferring every model's columns can take several minutes; the progress notification can also be cancelled."
+        },
+        "erdStudio.sqlmesh.autoRefresh": {
+          "type": "boolean",
+          "scope": "machine",
+          "default": false,
+          "markdownDescription": "Automatically refresh source metadata after SQLMesh model, macro, audit, seed, config or binding files change. Executes trusted project code after a short debounce; never deploys or inspects the warehouse automatically. Off by default. An automatic source refresh clears previous warehouse observations."
         }
       }
     }

@@ -1,0 +1,3 @@
+-r requirements-test.txt
+# Optional remote-protocol acceptance; regular DuckDB tests do not require this.
+psycopg2-binary==2.9.11

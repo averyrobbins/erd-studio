@@ -184,6 +184,22 @@ export async function run(): Promise<void> {
       } finally { terminal.dispose(); }
       checks.push('real terminal preserves prompt argument, cwd and selected Python PATH');
 
+      const settings = vscode.workspace.getConfiguration('erdStudio');
+      const previousAuto = settings.inspect<boolean>('sqlmesh.autoRefresh')?.globalValue;
+      try {
+        await settings.update('sqlmesh.autoRefresh', true, vscode.ConfigurationTarget.Global);
+        const input = path.join(root, 'models/fct_order.sql');
+        fs.appendFileSync(input, '\n-- automatic refresh acceptance\n');
+        const hash = (await import('node:crypto')).createHash('sha256').update(fs.readFileSync(input)).digest('hex');
+        await until('automatic source refresh through the registered extension watcher', () => {
+          const snapshot = JSON.parse(fs.readFileSync(path.join(root, '.erd-studio/sqlmesh.json'), 'utf8'));
+          return snapshot.inputs['models/fct_order.sql'] === hash;
+        });
+      } finally {
+        await settings.update('sqlmesh.autoRefresh', previousAuto, vscode.ConfigurationTarget.Global);
+      }
+      checks.push('opt-in automatic metadata refresh observes source saves without a manual command');
+
       fs.rmSync(path.join(root, '.erd-studio/sqlmesh.json'));
       const failedSwitch = await active.send({ type: 'switchStage', payload: { stage: 'physical' } }, 'error');
       assert.match(failedSwitch.payload.message, /export|metadata/i);

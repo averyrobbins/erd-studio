@@ -18,6 +18,7 @@ import * as vscode from 'vscode';
  */
 export const USER_SCOPED_SETTINGS: ReadonlySet<string> = new Set([
   'sqlmesh.pythonPath',
+  'sqlmesh.autoRefresh',
   'feedback.aiAssist',
   'feedback.endpoint',
   'feedback.model',

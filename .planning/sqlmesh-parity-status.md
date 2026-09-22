@@ -25,10 +25,11 @@ No worktrees. Do not mark full parity from fixture-only or mocked evidence.
    Installed editor imported a spaced identifier, displayed its native hint, and
    generated the correct alias-to-native source plan. 1,684 full JS tests plus
    a stale-selection regression, 24 Python tests and 12 MCP smoke checks pass.
-5. **Automation and warehouse parity** — pending. Add optional metadata refresh
-   after source edits; support and verify one remote-protocol warehouse adapter;
-   work through domain execution, model lifecycle, composite relationships and
-   other gaps against the actual dbt workflow baseline.
+5. **Automation and warehouse parity** — automatic source refresh and PostgreSQL
+   inspection passed. Installed-editor saves update both comparisons, with unchanged
+   DuckDB bytes. Real-host checks cover opt-in refresh; PostgreSQL 17.11 TCP tests
+   cover a SELECT-only role and read-only transaction enforcement. Domain execution,
+   model lifecycle and composite relationships are the remaining focus.
 
 ## Completion gates
 

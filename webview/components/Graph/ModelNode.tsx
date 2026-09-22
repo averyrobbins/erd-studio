@@ -86,7 +86,7 @@ const SOURCE_PHRASE: Record<PhysicalColumnSource, string> = {
   file: 'the source file only',
   'sqlmesh-declared': 'declared SQLMesh metadata (not warehouse observation)',
   'sqlmesh-inferred': 'SQLMesh query inference (not warehouse observation)',
-  'sqlmesh-observed': 'DuckDB warehouse observation (source-only columns retained)',
+  'sqlmesh-observed': 'SQLMesh warehouse observation (source-only columns retained)',
 };
 
 /** Join a contributor list as prose: "a", "a and b", "a, b and c". */
