@@ -83,3 +83,35 @@ SELECT-only inspection, quoted bindings, drift, missing state/environment,
 permission failures, and a rejected CREATE TABLE even with owner credentials when
 using the read-only adapter. Together with DuckDB/export tests, 29 Python tests
 pass. Cloud/TLS behavior is not covered by this loopback acceptance.
+
+## Domain planning and model lifecycle follow-up
+
+The installed command prepared exactly the two then-bound acceptance model IDs,
+launched SQLMesh's native planner and reached **Apply - Backfill Tables [y/n]**.
+Answered **n**. SQLMesh included an upstream model's missing intervals beyond the
+original sample backfill, confirming that direct selection is not a hard execution
+boundary. The UI/plan now states dependencies and affected downstream models may
+be outside the domain. Planner execution is separate and can initialize state.
+
+A third real Claude session received a whole-model creation plan for `customer_counts`.
+Its logical rationale explicitly requested a FULL projection of `item_id` and
+`num_orders` from `sqlmesh_example.full_model`, with unchanged expressions/types.
+The installed editor generated a pending canonical binding and absent source path.
+Claude verified hashes, created the SQL file and invoked the supplied exporter.
+Independently verified FULL kind, INT/BIGINT columns, removal from `pendingModels`,
+matching editor comparison and identical DuckDB SHA-256. No deployment occurred.
+
+Temporarily moved that newly created disposable source file out of the project.
+Automatic refresh exposed a logical-only model. **Physical → Apply to logical design**
+detached it; shared YAML stayed byte-identical. With the canvas focused, native Undo
+restored exact domain bytes, including positions. Restored the disposable source
+and refreshed. Provider tests additionally preserve other domains and incident-edge
+behavior. Source deletion itself is not an implemented assistant action.
+
+A window reload exposed a persisted Physical → Logical comparison being restored
+as Logical → Logical because the editor starts in Logical. The restore hook now
+chooses the opposite current stage and drops selections when the direction changes;
+a regression test covers it. Final checks: 1,713 JS / 31 Python / 13 MCP / 11 real-host
+checks, compile and production VSIX. Transient evidence: `/tmp/erd-lifecycle-*`,
+`/tmp/erd-domain-planner.png`, `/tmp/erd-final-*`. Exact commands/versions and ongoing
+limits are in the setup guide and current status.

@@ -2,7 +2,8 @@
 
 Current work: [parity status](sqlmesh-parity-status.md) and
 [installed editor acceptance](sqlmesh-editor-acceptance-results.md). The numbered
-handoffs below describe historical review checkpoints.
+handoffs 01–11 below describe historical review checkpoints.
+[Handoff 12: near-parity implementation](sqlmesh-review-handoff-12-near-parity.md) is the latest review brief.
 
 Branch `claude/sqlmesh-review-fixes` (from `sqlmesh-integration` @ `23292db`) addresses every finding of the independent review of `ecb9ba0..23292db`, one commit per finding, highest priority first. Each note below is a self-contained review handoff: the defect, the change, what to scrutinise, and what was (and was not) validated. Review the whole branch with `git diff 23292db..claude/sqlmesh-review-fixes`, or one commit at a time in this order.
 

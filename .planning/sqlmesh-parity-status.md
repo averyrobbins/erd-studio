@@ -1,49 +1,48 @@
-# SQLMesh parity work — current status
+# SQLMesh parity — current status
 
-Active work on `sqlmesh-integration`. This is the current execution checklist;
-the numbered review handoffs remain historical records. User authorized steps
-1–5 in order, disposable sibling projects, local testing and periodic commits/pushes.
-No worktrees. Do not mark full parity from fixture-only or mocked evidence.
+Core workflow near parity, implemented through **2ba5690** on `sqlmesh-integration`.
+The accepted steps 1–5 were pursued in order with disposable projects and local
+validation. This is a development preview, not a claim of universal dbt/SQLMesh parity.
 
-## Acceptance sequence
+## Completed sequence
 
-1. **Correctness and review** — implemented. Relationship endpoints, observed
-   columns and design badges now use one-to-one matching. The selected Python
-   environment owns PATH/VIRTUAL_ENV consistently. Typechecks, 1,673 JS tests,
-   production build and 11 MCP smoke checks pass. Review of `0543a6c..5a4a023`
-   found these additional identity/environment issues; source navigation bounds,
-   import/sync rejection paths and existing dbt regressions remain covered.
-2. **Complete editor workflow** — passed on Linux. A UV-created SQLMesh/DuckDB
-   sibling exercised the installed custom editor, two real Claude source edits,
-   refresh/comparison, canvas-focused undo and deployed schema inspection.
-   See [acceptance evidence](sqlmesh-editor-acceptance-results.md).
-3. **Consolidated evidence** — documented. Current status and acceptance evidence
-   are linked from the historical handoffs and setup guide.
-4. **Explicit column bindings** — passed. Map safe logical names to exact native
-   identifiers consistently in import, display, comparison, relationships, both
-   sync directions and AI/MCP guidance, with invalid/ambiguous mappings rejected.
-   Installed editor imported a spaced identifier, displayed its native hint, and
-   generated the correct alias-to-native source plan. 1,684 full JS tests plus
-   a stale-selection regression, 24 Python tests and 12 MCP smoke checks pass.
-5. **Automation and warehouse parity** — automatic source refresh and PostgreSQL
-   inspection passed. Installed-editor saves update both comparisons, with unchanged
-   DuckDB bytes. Real-host checks cover opt-in refresh; PostgreSQL 17.11 TCP tests
-   cover a SELECT-only role and read-only transaction enforcement. Domain execution,
-   model lifecycle and composite relationships are the remaining focus.
+1. **Review/correctness:** reviewed `0543a6c..5a4a023`; fixed identifier matching,
+   source/observed column identity, design badges and assistant Python environment.
+2. **Installed editor:** verified real Claude source edits, refresh/comparison,
+   grouped undo and deployed DuckDB inspection in an isolated VS Code profile.
+3. **Evidence:** consolidated the original analysis, current setup/status and
+   acceptance results; historical handoffs remain linked for provenance.
+4. **Column bindings:** exact native identifiers map to safe logical aliases through
+   import, display, comparison, relationships, sync, assistant plans and MCP.
+5. **Remaining workflow:** opt-in automatic metadata refresh; read-only PostgreSQL;
+   reviewed interactive domain planning; assisted native model creation and undoable
+   domain detachment. Reviewed composite relationships and retained an explicit gap
+   rather than infer tuple validity from independent single-column checks.
 
-## Completion gates
+## Validation at completion
 
-- Native SQLMesh and dbt share the existing logical-file/editor contract.
-- Supported model kinds, quoted identifiers, audit evidence, source vs deployed
-  metadata, unknown/unavailable state and stale-plan handling have acceptance cases.
-- Source-edit plans and metadata-to-logical changes preserve design annotations,
-  source semantics and correct identifiers. User warehouse deployment is separate.
-- Existing dbt checks, SQLMesh Python checks, MCP checks and real editor checks pass.
-- Packaging is current; remaining platform/version/model-kind limitations are
-  stated without describing unverified behavior as supported.
-- Remote branches include validated work. Local test evidence is preferred; no
-  GitHub Actions are deliberately triggered as part of this work.
+- TypeScript compilation and production packaging passed.
+- 1,713 JavaScript tests / 76 files; 31 Python tests, including five PostgreSQL cases.
+- MCP typecheck/build and 13 smoke checks; 9 SQLMesh + 2 dbt real VS Code host checks.
+- Installed VSIX: three real Claude edits/creation, quoted alias import, automatic
+  refresh in both comparisons, domain planner reaching its Apply prompt (answered
+  no), and model detachment/native undo restoring exact domain bytes.
+- DuckDB bytes unchanged across source-only creation/refresh and read-only inspection.
+- Linux, VS Code 1.138.0, SQLMesh 0.236.1, SQLGlot 30.8.0, DuckDB 1.5.5,
+  Python 3.13.15; disposable PostgreSQL 17.11 loopback TCP acceptance.
+- No worktrees, PR, release, production deployment or deliberate GitHub Actions run.
 
-The computer may be suspended only after the full goal has passed its completion
-audit, then a ten-second wait, as requested by the user. An intermediate checkpoint
-is not permission to suspend.
+## Remaining limitations and next decisions
+
+| Area | Boundary / next step |
+|---|---|
+| Composite FK | Shared schema stores single-column edges. Add explicit ordered tuple groups and a real tuple audit before claiming compound FK/cardinality parity. |
+| Model deletion | Logical detachment retains shared YAML. Native deletion remains manual pending downstream/state/history impact review. |
+| Source synthesis | Assisted SQL creation/edits require known expressions and model kind. Generated/Python/seed/external source changes stay manual. |
+| Warehouse breadth | DuckDB files and PostgreSQL, single native project/gateway and built-in scheduler. Validate a specific next engine with restricted credentials. |
+| Freshness | Standard local input hashes; external imports, environment variables, remote inputs and warehouse changes require explicit refresh/inspection. |
+| Portability | Windows/macOS, other SQLMesh versions, production scale and cloud TLS/authentication remain unverified. |
+
+Recommended next step: independent review using [handoff 12](sqlmesh-review-handoff-12-near-parity.md),
+then a pilot on a representative native SQLMesh project. Choose composite relationships
+or a concrete warehouse engine after that review. No additional deployment is implied.
