@@ -12,6 +12,10 @@ heading — `## Unreleased — 1.0.0` — and the workflow releases exactly that
 
 ### Fixed
 
+- **SQLMesh source validation and editor refresh:** source plans carry an explicit
+  state-free exporter command; assistant instructions avoid state-initializing
+  `sqlmesh render`. Comparison updates after edits and grouped undo/redo. Real
+  installed-editor/Claude and read-only DuckDB acceptance results are recorded.
 - **SQLMesh comparison and observations:** relationships, warehouse column types
   and design key badges use one-to-one identifier matching, preserving distinct
   quoted columns instead of folding them into the same edge or column.

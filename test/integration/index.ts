@@ -139,8 +139,11 @@ export async function run(): Promise<void> {
       // Focus the domain document so VS Code routes native undo to the shared
       // edit stack. This checks real grouped file edits, beyond mock op counts.
       await vscode.window.showTextDocument(active.doc);
+      const beforeUndo = active.replies.length;
       await active.send({ type: 'undo' }, 'domainLoaded');
       assert.equal(fs.readFileSync(modelFile, 'utf8'), originalModel);
+      await until('comparison reflects grouped undo', () => active!.replies.slice(beforeUndo)
+        .find(m => m.type === 'discrepancyReport' && m.payload?.summary.dataTypeMismatches === 1));
       checks.push('logical sync preserves annotations and native grouped undo restores YAML');
       await active.send({ type: 'toggleDiscrepancy', payload: { enabled: true, compareAgainst: 'physical' } }, 'discrepancyReport');
       await active.send({ type: 'generateSyncPlan', payload: { selections: { 'col:fct_order:amount': 'logical' } } }, 'syncPlanGenerated');

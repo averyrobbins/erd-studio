@@ -4,7 +4,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, PropertyMock
 
 from sqlmesh.core.context import Context
 
@@ -59,6 +59,18 @@ class ExportTest(unittest.TestCase):
         # Canonical form: sorted keys, no whitespace, ASCII-only escapes — see canonicalJson in the editor.
         self.assertEqual(exporter.canonical_json({"b": "\u00e9\U0001f600\x7f", "a": [1, None, True]}),
                          '{"a":[1,null,true],"b":"\\u00e9\\ud83d\\ude00\\u007f"}')
+
+    def test_source_validation_does_not_initialize_warehouse_state(self):
+        database = self.root / "warehouse.duckdb"
+        config = self.root / "config.yaml"
+        config.write_text(config.read_text().replace("':memory:'", json.dumps(str(database))))
+        with patch.object(Context, "state_sync", new_callable=PropertyMock,
+                          side_effect=AssertionError("state_sync accessed")), \
+             patch.object(Context, "state_reader", new_callable=PropertyMock,
+                          side_effect=AssertionError("state_reader accessed")):
+            result = self.export()
+        self.assertTrue(result["models"])
+        self.assertFalse(database.exists(), "Source-only validation must not create SQLMesh state")
 
     def test_input_files_agree_with_the_editor_on_symlinks(self):
         import os

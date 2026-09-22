@@ -9,7 +9,7 @@ or prepares source edits for an assistant. Deployment remains a separate user ac
 ## Try it
 
 The locally built `erd-studio-sqlmesh-draft.vsix` can be selected with VS Code's
-**Extensions: Install from VSIX** command. It has not been installed automatically.
+**Extensions: Install from VSIX** command. Acceptance testing installs it only in a disposable, isolated VS Code profile.
 Alternatively, use the source workflow below.
 
 1. From this repository, run `npm ci` and `npm run build`. Open the repository in
@@ -179,7 +179,11 @@ provenance and SHA-256 preconditions covering source/export/bindings/shared desi
   Other assistants can read the same plan and the installed ERD
   Studio harness. Source edits support SQL model files: declarations,
   projections and the FK/uniqueness audit convention. The assistant must verify
-  hashes, preserve model logic/kind, validate locally, and refresh/compare afterward.
+  hashes, preserve model logic/kind, and run the plan’s explicit `refreshCommand`
+  afterward. This invokes the installed source-only exporter with `load_state=False`.
+  Do not use `sqlmesh render` or a default `Context` for source validation: they
+  can initialize warehouse state. Run unit tests only on a known disposable test
+  connection. Comparison refreshes after edits, sync and grouped undo/redo.
   Missing transformation expressions require user input; this is AI-assisted source
   editing, not a deterministic SQL rewriter. Export source-only metadata before
   generating a source plan so deployed drift is not confused with source drift.
@@ -244,6 +248,7 @@ These checks use the production React webview with a test-only message bridge an
 real VS Code document, command, terminal and WorkspaceEdit APIs. They exercise
 native activation/refresh, both stages, comparisons, source navigation, sync/undo,
 stale-plan rejection and cancellation. An inert CLI probe verifies terminal arguments
-and the configured Python PATH; it makes no AI request. A real Claude-assisted source
-edit, Windows/macOS behavior, and production warehouses remain separate acceptance
-checks. Tested locally on Linux with VS Code 1.138.0.
+and the configured Python PATH; it makes no AI request. A separate [installed-editor acceptance run](../../.planning/sqlmesh-editor-acceptance-results.md)
+verified actual Claude source edits, canvas-focused undo and DuckDB inspection
+without a test bridge. Windows/macOS and production warehouses remain unverified.
+Tested locally on Linux with VS Code 1.138.0.

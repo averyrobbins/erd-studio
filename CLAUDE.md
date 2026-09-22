@@ -412,3 +412,13 @@ PAT is stored in `.env` as `AZURE_PAT`. The PAT **must** be scoped to "All acces
 ```bash
 source .env && npx @vscode/vsce unpublish <publisher>.<extension-id> --pat "$AZURE_PAT" --force
 ```
+
+### Native SQLMesh validation
+
+Source-edit plans include an installed `refreshCommand` (executable and argument
+array). Use it after source edits; the exporter loads with `load_state=False`.
+Do not validate using `sqlmesh render` or a default `Context`: those can initialize
+warehouse state. Unit tests require a known disposable test connection. Native
+comparison is recomputed through `sendDomainData` after logical edits/undo; a
+background comparison failure clears the report without failing the edit. Current
+acceptance and remaining work are indexed in `.planning/sqlmesh-parity-status.md`.

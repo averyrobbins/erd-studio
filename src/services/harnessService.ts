@@ -34,7 +34,7 @@ export const HARNESS_VERSION = '17';
  * `SQLMESH_SYNC_INSTRUCTIONS` change. A file's provider marker decides which
  * version it is compared against.
  */
-export const SQLMESH_HARNESS_VERSION = '1';
+export const SQLMESH_HARNESS_VERSION = '2';
 
 /** The harness version the given provider's generated files carry. */
 export function harnessVersionFor(provider: 'dbt' | 'sqlmesh'): string {

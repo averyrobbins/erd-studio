@@ -99,6 +99,7 @@ import { buildSqlmeshSyncPlan, applySqlmeshLogicalPlan, captureSqlmeshInputs, as
 import type { SqlmeshSyncPlan } from '../services/sqlmeshSync';
 import { assertLogicalColumnMapping, sameIdentifier } from '../services/identifierMatching';
 import { assistantEnvironment, resolveExecutable } from '../services/assistantLaunch';
+import { sqlmeshRefreshCommand } from '../services/sqlmeshRefresh';
 import type { CatalogData } from '../types/catalog';
 import { OwnWriteTracker, ownWrites } from '../services/ownWriteTracker';
 import type {
@@ -1677,6 +1678,12 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       }
       // A payload went out, so the next failure is news again.
       this.lastLoadError.delete(errorKey);
+      // Own-write suppression also suppresses watcher-driven comparisons.
+      // Keep an open Diff current after edits, grouped undo/redo and refreshes.
+      if (panel?.lastCompareAgainst && panel.lastCompareAgainst !== activeStage) {
+        await this.handleToggleDiscrepancy(key, document, webview,
+          { enabled: true, compareAgainst: panel.lastCompareAgainst }, true);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.postLoadError(webview, errorKey, {
@@ -3580,6 +3587,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     document: vscode.TextDocument,
     webview: vscode.Webview,
     payload: { enabled: boolean; compareAgainst?: Stage },
+    background = false,
   ): Promise<void> {
     if (!payload.enabled || !payload.compareAgainst) {
       const panelEntry = this.openPanels.get(panelKey);
@@ -3637,7 +3645,11 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[SemanticEditorProvider] Discrepancy comparison failed: ${message}`);
-      this.post(webview, { type: 'error', payload: { message } });
+      const panel = this.openPanels.get(panelKey);
+      if (panel) panel.lastDiscrepancyReport = null;
+      // A missing export must not turn a successful logical edit into an error.
+      // Explicit comparisons still explain why metadata is unavailable.
+      if (!background) this.post(webview, { type: 'error', payload: { message } });
       webview.postMessage({ type: 'discrepancyReport', payload: null });
     }
   }
@@ -3906,6 +3918,12 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     if (JSON.stringify(report) !== JSON.stringify(panel.lastDiscrepancyReport)) throw new Error('The comparison changed. Compare again before choosing resolutions.');
     const plan = buildSqlmeshSyncPlan({ report, selections, snapshot: context.snapshot,
       domainPath: context.domainPath, semanticDir: context.semanticDir, preconditions: context.preconditions });
+    if (plan.direction === 'logical-to-source') {
+      plan.refreshCommand = sqlmeshRefreshCommand({ root: this.workspaceRoot, semanticDir: context.semanticDir,
+        exporter: path.join(this.context.extensionUri.fsPath, 'dist', 'sqlmesh_export.py'),
+        python: getErdStudioSetting('sqlmesh.pythonPath', ''), gateway: context.snapshot.gateway ?? undefined,
+        config: context.snapshot.config ?? undefined });
+    }
     for (const name of Object.keys(plan.modelContext)) {
       assertLogicalColumnMapping(name, context.unified.logical.models.find(m => m.name === name)?.columns ?? [], 'exact');
     }
@@ -3962,8 +3980,6 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       const panel = this.openPanels.get(panelKey);
       if (panel) panel.sqlmeshPlan = undefined;
       this.post(webview, { type: 'sqlmeshLogicalSyncApplied' });
-      if (panel?.lastCompareAgainst) await this.handleToggleDiscrepancy(panelKey, document, webview,
-        { enabled: true, compareAgainst: panel.lastCompareAgainst });
     }
   }
 

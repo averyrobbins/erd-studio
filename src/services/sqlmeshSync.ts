@@ -35,6 +35,8 @@ export interface SqlmeshSyncPlan {
   /** Preimages include the export, source files, bindings and shared logical definitions. */
   preconditions: Record<string, string>;
   instructions: string[];
+  /** Explicit source-only exporter invocation supplied by the installed editor. */
+  refreshCommand?: { executable: string; args: string[] };
   deployment: 'separate-user-action';
 }
 
@@ -45,7 +47,8 @@ export const SQLMESH_SYNC_INSTRUCTIONS = [
   'Use each column resolvedDataType, not the stage-relative types. Adding a column needs a real expression grounded in the project; ask the user if the expression or backfill semantics cannot be determined. Never fabricate data or silently append NULL placeholders.',
   'Relationship actions mean erd_relationship(column := ..., to := qualified_model, field := ...) audits, with unfiltered unique_values or unique_combination_of_columns only when justified. The parent must be a dependency of the child: SQLMesh builds its DAG from the query, not from audits, so when the child query does not select from the parent add depends_on (qualified_model) to the child MODEL — otherwise the audit can run before the parent table exists and a fresh deployment fails. Do not turn grain, lineage or references into enforced keys. Review all consumers before changing shared uniqueness audits.',
   'Do not edit generated SQL, Python generators, seeds or external model definitions through this workflow. Those require a separate manual change. Preserve quoted identifiers and dialect syntax.',
-  'Validate with the project Python environment and metadata.gateway/config: SQLMesh load/render, lint and unit tests where configured. Refresh Project Metadata in ERD Studio, then compare again. Report unresolved differences and tests performed; a source edit is not a warehouse deployment.',
+  'After editing, invoke refreshCommand.executable with refreshCommand.args as separate arguments, from the project root. This is the installed source-only exporter using load_state=False: it loads/validates the project and refreshes inferred metadata without initializing SQLMesh state. Do not hand-edit sqlmesh.json. If refreshCommand is absent, ask the user to Refresh Project Metadata in ERD Studio. Compare the refreshed model columns/relationships with the selected resolutions and report any remaining differences.',
+  'Do not use the sqlmesh render CLI or a default Context for validation: these can initialize or migrate warehouse state even without a deployment. Run unit tests only against a known disposable test connection. Preserve metadata.gateway/config and report validation performed; a source edit is not a warehouse deployment.',
   'Never run plan, apply, run, migrate, janitor, audit, evaluate, create_external_models or warehouse DDL as part of executing this plan. The user reviews and runs deployment separately.',
 ];
 

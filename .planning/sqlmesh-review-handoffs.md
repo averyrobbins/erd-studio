@@ -1,5 +1,9 @@
 # SQLMesh integration — review follow-up handoffs
 
+Current work: [parity status](sqlmesh-parity-status.md) and
+[installed editor acceptance](sqlmesh-editor-acceptance-results.md). The numbered
+handoffs below describe historical review checkpoints.
+
 Branch `claude/sqlmesh-review-fixes` (from `sqlmesh-integration` @ `23292db`) addresses every finding of the independent review of `ecb9ba0..23292db`, one commit per finding, highest priority first. Each note below is a self-contained review handoff: the defect, the change, what to scrutinise, and what was (and was not) validated. Review the whole branch with `git diff 23292db..claude/sqlmesh-review-fixes`, or one commit at a time in this order.
 
 | # | Commit | Finding | Note |
@@ -19,3 +23,10 @@ Branch `claude/sqlmesh-review-fixes` (from `sqlmesh-integration` @ `23292db`) ad
 Validation at the branch head (after commit 10): `npm run compile` clean; `npx vitest run` 74 files / 1647 tests; `npm run package` OK with 13 files listed by `vsce ls`; Python suite 21/21 (`.venv-sqlmesh`, SQLMesh 0.236.1); `mcp-server` type-check, build and smoke 11/11; `npm audit --omit=dev --audit-level=high` clean. Nothing was run against a real warehouse; DuckDB tests used disposable databases only. Items that still lack live verification are named in each note's "What to check" section — chiefly a real launch from the extension development host (note 10) and Windows behaviour (notes 08 and 10).
 
 Original handoff that started the review: `/tmp/erd-studio-claude-handoff-2026-09-20.md` (not in the repository).
+
+## Subsequent integration work
+
+`sqlmesh-integration` now includes the review-fix branch above plus `5a4a023`:
+column mapping guards, exact uniqueness evidence, source navigation, and real
+VS Code acceptance tests. [Handoff 11: editor acceptance](sqlmesh-review-handoff-11-editor-acceptance.md)
+describes the new review range, validation evidence and remaining limitations.

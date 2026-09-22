@@ -49,6 +49,24 @@ beforeEach(async () => {
 afterEach(() => { panel.dispose(); vi.restoreAllMocks(); fs.rmSync(root, { recursive: true, force: true }); });
 const error = () => (panel._postedMessages as any[]).filter(m => m.type === 'error').at(-1)?.payload.message;
 
+it('recomputes an open comparison after a logical column edit', async () => {
+  await panel._simulateMessage({ type: 'toggleDiscrepancy', payload: { enabled: true, compareAgainst: 'physical' } });
+  const report = () => (panel._postedMessages as any[]).filter(m => m.type === 'discrepancyReport').at(-1)?.payload;
+  expect(report().summary.dataTypeMismatches).toBe(1);
+  await panel._simulateMessage({ type: 'updateColumn', payload: { modelName: 'fct_order', oldColumnName: 'amount', column: { name: 'amount', dataType: 'DECIMAL(10, 2)' } } });
+  expect(error()).toBeUndefined();
+  expect(report().summary.dataTypeMismatches).toBe(0);
+});
+
+it('clears a failed background comparison without reporting a logical edit as failed', async () => {
+  await panel._simulateMessage({ type: 'toggleDiscrepancy', payload: { enabled: true, compareAgainst: 'physical' } });
+  fs.rmSync(path.join(root, '.erd-studio/sqlmesh.json'));
+  await panel._simulateMessage({ type: 'updateModelGrain', payload: { modelName: 'fct_order', grain: 'Still editable without metadata' } });
+  expect(error()).toBeUndefined();
+  expect(models.getModel('fct_order')!.grain).toBe('Still editable without metadata');
+  expect((panel._postedMessages as any[]).filter(m => m.type === 'discrepancyReport').at(-1).payload).toBeNull();
+});
+
 it.each(['logical', 'physical'] as const)('opens the bound model source from %s without modifying files', async stage => {
   if (stage === 'physical') await panel._simulateMessage({ type: 'switchStage', payload: { stage } });
   const open = vi.spyOn(vscode.window, 'showTextDocument');
@@ -112,6 +130,8 @@ it('prepares an AI source plan and rejects applying it through the logical write
   const saved = JSON.parse(fs.readFileSync(path.join(root, '.erd-studio/.sync-plan.json'), 'utf8'));
   expect(saved.direction).toBe('logical-to-source');
   expect(saved.modelContext.fct_order.sourcePath).toBe('models/fct_order.sql');
+  expect(saved.refreshCommand.args).toEqual([path.join(repo, 'dist/sqlmesh_export.py'), '--project', root, '--semantic-dir', '.erd-studio']);
+  expect(saved.instructions.join(' ')).toContain('Do not use the sqlmesh render CLI');
   const before = edits.mock.calls.length;
   await panel._simulateMessage({ type: 'applySqlmeshLogicalSync' });
   expect(error()).toContain('assisted source edits');

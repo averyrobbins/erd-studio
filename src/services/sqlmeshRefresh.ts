@@ -5,6 +5,19 @@ import * as path from 'path';
 
 const execute = promisify(execFile);
 
+/** The same explicit command is used by the editor and source-plan assistants. */
+export function sqlmeshRefreshCommand(options: {
+  root: string; semanticDir: string; exporter: string; python?: string; gateway?: string; config?: string; environment?: string;
+}): { executable: string; args: string[] } {
+  const localPython = path.join(options.root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const executable = options.python || (fs.existsSync(localPython) ? localPython : (process.platform === 'win32' ? 'python' : 'python3'));
+  const args = [options.exporter, '--project', options.root, '--semantic-dir', options.semanticDir];
+  if (options.gateway) args.push('--gateway', options.gateway);
+  if (options.config) args.push('--config', options.config);
+  if (options.environment) args.push('--environment', options.environment);
+  return { executable, args };
+}
+
 /** Default for `erdStudio.sqlmesh.exportTimeoutSeconds`; the setting's floor keeps a typo from killing every export. */
 export const DEFAULT_EXPORT_TIMEOUT_SECONDS = 600;
 export const MIN_EXPORT_TIMEOUT_SECONDS = 30;
@@ -26,12 +39,7 @@ export async function refreshSqlmesh(options: {
   root: string; semanticDir: string; exporter: string; python?: string; gateway?: string; config?: string; environment?: string;
   timeoutMs?: number; signal?: AbortSignal;
 }): Promise<string> {
-  const localPython = path.join(options.root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
-  const python = options.python || (fs.existsSync(localPython) ? localPython : (process.platform === 'win32' ? 'python' : 'python3'));
-  const args = [options.exporter, '--project', options.root, '--semantic-dir', options.semanticDir];
-  if (options.gateway) args.push('--gateway', options.gateway);
-  if (options.config) args.push('--config', options.config);
-  if (options.environment) args.push('--environment', options.environment);
+  const { executable: python, args } = sqlmeshRefreshCommand(options);
   const timeout = options.timeoutMs ?? exportTimeoutMs(undefined);
   try {
     const { stdout } = await execute(python, args, {
