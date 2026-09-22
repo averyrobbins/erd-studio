@@ -1,3 +1,4 @@
+import { relationshipEdgeId } from '../../src/types/relationships';
 /**
  * useCanvasShortcuts — the global keydown handler for the canvas
  * (Escape, Delete/Backspace, Ctrl+F, Ctrl+C/V for notes, F2, Shift+L,
@@ -34,7 +35,7 @@ let _copiedAnnotation: CopiedAnnotation | null = null;
 
 /** Edge id as produced by graphTransformer for an FK relationship. */
 function fkEdgeId(r: RelationshipKey): string {
-  return `fk-${r.fromModel}-${r.fromColumn}-${r.toModel}-${r.toColumn}`;
+  return relationshipEdgeId(r);
 }
 
 /**
@@ -56,6 +57,7 @@ function selectedEdgesToRelationships(
       fromColumn: rel.fromColumn,
       toModel: rel.toModel,
       toColumn: rel.toColumn,
+      ...(rel.columnPairs ? { columnPairs: rel.columnPairs } : {}),
     });
   }
   return result;

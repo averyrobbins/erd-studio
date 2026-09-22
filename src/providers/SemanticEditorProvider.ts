@@ -1,3 +1,5 @@
+import { relationshipPairs, sameRelationship, renameRelationshipColumn, validRelationshipColumns, type RelationshipEndpoints, type ColumnPair } from '../types/relationships';
+import { relationshipKey } from '../types/syncPlan';
 /**
  * SemanticEditorProvider — CustomTextEditorProvider for semantic domain JSON files.
  *
@@ -770,7 +772,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
             break;
           }
           case 'addRelationship': {
-            const payload = (message as { payload?: { fromModel: string; fromColumn: string; toModel: string; toColumn: string; cardinality: Cardinality } }).payload;
+            const payload = (message as { payload?: { fromModel: string; fromColumn: string; toModel: string; toColumn: string; columnPairs?: ColumnPair[]; cardinality: Cardinality } }).payload;
             if (payload) {
               if (!isValidCardinality(payload.cardinality)) {
                 this.post(webviewPanel.webview, { type: 'error', payload: { message: `Failed to add relationship: unknown cardinality "${String(payload.cardinality)}".` } });
@@ -822,7 +824,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
             break;
           }
           case 'updateRelationship': {
-            const payload = (message as { payload?: { fromModel: string; fromColumn: string; toModel: string; toColumn: string; cardinality: Cardinality } }).payload;
+            const payload = (message as { payload?: { fromModel: string; fromColumn: string; toModel: string; toColumn: string; columnPairs?: ColumnPair[]; cardinality: Cardinality } }).payload;
             if (payload) {
               if (!isValidCardinality(payload.cardinality)) {
                 this.post(webviewPanel.webview, { type: 'error', payload: { message: `Failed to update relationship: unknown cardinality "${String(payload.cardinality)}".` } });
@@ -834,7 +836,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
             break;
           }
           case 'editRelationship': {
-            const payload = (message as { payload?: { originalFromModel: string; originalFromColumn: string; originalToModel: string; originalToColumn: string; fromModel: string; fromColumn: string; toModel: string; toColumn: string; cardinality: Cardinality } }).payload;
+            const payload = (message as { payload?: { originalFromModel: string; originalFromColumn: string; originalToModel: string; originalToColumn: string; originalColumnPairs?: ColumnPair[]; fromModel: string; fromColumn: string; toModel: string; toColumn: string; columnPairs?: ColumnPair[]; cardinality: Cardinality } }).payload;
             if (payload) {
               if (!isValidCardinality(payload.cardinality)) {
                 this.post(webviewPanel.webview, { type: 'error', payload: { message: `Failed to edit relationship: unknown cardinality "${String(payload.cardinality)}".` } });
@@ -1535,7 +1537,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       if (!fkColumnsByModel.has(rel.fromModel)) {
         fkColumnsByModel.set(rel.fromModel, new Set());
       }
-      fkColumnsByModel.get(rel.fromModel)!.add(rel.fromColumn);
+      for (const pair of relationshipPairs(rel)) fkColumnsByModel.get(rel.fromModel)!.add(pair.fromColumn);
     }
 
     const models = domain.models.map((model) => {
@@ -1572,6 +1574,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       fromColumn: rel.fromColumn,
       toModel: rel.toModel,
       toColumn: rel.toColumn,
+      ...(rel.columnPairs ? { columnPairs: rel.columnPairs } : {}),
       cardinality: rel.cardinality,
     }));
 
@@ -2147,12 +2150,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
         const domainMutator = columnRenamed ? (section: Record<string, unknown>) => {
           const relationships = (section.relationships ?? []) as Array<Record<string, unknown>>;
           for (const rel of relationships) {
-            if (rel.fromModel === payload.modelName && rel.fromColumn === payload.oldColumnName) {
-              rel.fromColumn = payload.column.name;
-            }
-            if (rel.toModel === payload.modelName && rel.toColumn === payload.oldColumnName) {
-              rel.toColumn = payload.column.name;
-            }
+            renameRelationshipColumn(rel as unknown as RelationshipEndpoints, payload.modelName, payload.oldColumnName, payload.column.name);
           }
         } : undefined;
 
@@ -2235,12 +2233,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
           if (payload.oldColumnName !== payload.column.name) {
             const relationships = (section.relationships ?? []) as Array<Record<string, unknown>>;
             for (const rel of relationships) {
-              if (rel.fromModel === payload.modelName && rel.fromColumn === payload.oldColumnName) {
-                rel.fromColumn = payload.column.name;
-              }
-              if (rel.toModel === payload.modelName && rel.toColumn === payload.oldColumnName) {
-                rel.toColumn = payload.column.name;
-              }
+              renameRelationshipColumn(rel as unknown as RelationshipEndpoints, payload.modelName, payload.oldColumnName, payload.column.name);
             }
           }
         },
@@ -2466,20 +2459,21 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
   private async handleAddRelationship(
     document: vscode.TextDocument,
     webview: vscode.Webview,
-    payload: { fromModel: string; fromColumn: string; toModel: string; toColumn: string; cardinality: Cardinality },
+    payload: { fromModel: string; fromColumn: string; toModel: string; toColumn: string; columnPairs?: ColumnPair[]; cardinality: Cardinality },
     stage: 'logical',
   ): Promise<void> {
     try {
+      if (!validRelationshipColumns(payload) || typeof payload.fromModel !== 'string' || !payload.fromModel.trim()
+        || typeof payload.toModel !== 'string' || !payload.toModel.trim()) {
+        throw new Error('Invalid relationship: supply distinct ordered column pairs and matching first-pair anchors.');
+      }
       const success = await this.applyDomainEdit(
         document,
         (section) => {
           const relationships = (section.relationships ?? []) as Array<Record<string, unknown>>;
           const isDuplicate = relationships.some(
             (rel) =>
-              rel.fromModel === payload.fromModel &&
-              rel.fromColumn === payload.fromColumn &&
-              rel.toModel === payload.toModel &&
-              rel.toColumn === payload.toColumn,
+              sameRelationship(rel as unknown as RelationshipEndpoints, payload),
           );
           if (isDuplicate) {
             throw new Error('This relationship already exists.');
@@ -2490,6 +2484,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
             fromColumn: payload.fromColumn,
             toModel: payload.toModel,
             toColumn: payload.toColumn,
+            ...(payload.columnPairs ? { columnPairs: payload.columnPairs } : {}),
             cardinality: payload.cardinality,
           });
           section.relationships = relationships;
@@ -2803,7 +2798,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       (k): k is RelationshipKey =>
         !!k &&
         typeof k.fromModel === 'string' && typeof k.fromColumn === 'string' &&
-        typeof k.toModel === 'string' && typeof k.toColumn === 'string',
+        typeof k.toModel === 'string' && validRelationshipColumns(k),
     );
     if (keys.length === 0) return;
     const label = keys.length === 1 ? 'relationship' : 'relationships';
@@ -2816,10 +2811,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
           const matches = (rel: Record<string, unknown>) =>
             keys.some(
               (k) =>
-                rel.fromModel === k.fromModel &&
-                rel.fromColumn === k.fromColumn &&
-                rel.toModel === k.toModel &&
-                rel.toColumn === k.toColumn,
+                sameRelationship(rel as unknown as RelationshipEndpoints, k),
             );
           const remaining = relationships.filter((rel) => !matches(rel));
           if (remaining.length === relationships.length) {
@@ -2839,20 +2831,21 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
   private async handleUpdateRelationship(
     document: vscode.TextDocument,
     webview: vscode.Webview,
-    payload: { fromModel: string; fromColumn: string; toModel: string; toColumn: string; cardinality: Cardinality },
+    payload: { fromModel: string; fromColumn: string; toModel: string; toColumn: string; columnPairs?: ColumnPair[]; cardinality: Cardinality },
     stage: 'logical',
   ): Promise<void> {
     try {
+      if (!validRelationshipColumns(payload) || typeof payload.fromModel !== 'string' || !payload.fromModel.trim()
+        || typeof payload.toModel !== 'string' || !payload.toModel.trim()) {
+        throw new Error('Invalid relationship: supply distinct ordered column pairs and matching first-pair anchors.');
+      }
       const success = await this.applyDomainEdit(
         document,
         (section) => {
           const relationships = (section.relationships ?? []) as Array<Record<string, unknown>>;
           const relIndex = relationships.findIndex(
             (rel) =>
-              rel.fromModel === payload.fromModel &&
-              rel.fromColumn === payload.fromColumn &&
-              rel.toModel === payload.toModel &&
-              rel.toColumn === payload.toColumn,
+              sameRelationship(rel as unknown as RelationshipEndpoints, payload),
           );
           if (relIndex === -1) {
             throw new Error('Relationship not found.');
@@ -2876,42 +2869,39 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     document: vscode.TextDocument,
     webview: vscode.Webview,
     payload: {
-      originalFromModel: string; originalFromColumn: string; originalToModel: string; originalToColumn: string;
-      fromModel: string; fromColumn: string; toModel: string; toColumn: string; cardinality: Cardinality;
+      originalFromModel: string; originalFromColumn: string; originalToModel: string; originalToColumn: string; originalColumnPairs?: ColumnPair[];
+      fromModel: string; fromColumn: string; toModel: string; toColumn: string; columnPairs?: ColumnPair[]; cardinality: Cardinality;
     },
     stage: 'logical',
   ): Promise<void> {
     try {
+      if (!validRelationshipColumns(payload) || typeof payload.fromModel !== 'string' || !payload.fromModel.trim()
+        || typeof payload.toModel !== 'string' || !payload.toModel.trim()) {
+        throw new Error('Invalid relationship: supply distinct ordered column pairs and matching first-pair anchors.');
+      }
+      const original = { fromModel: payload.originalFromModel, fromColumn: payload.originalFromColumn,
+        toModel: payload.originalToModel, toColumn: payload.originalToColumn, columnPairs: payload.originalColumnPairs };
+      if (!validRelationshipColumns(original)) throw new Error('Invalid original relationship tuple.');
       const success = await this.applyDomainEdit(
         document,
         (section) => {
           const relationships = (section.relationships ?? []) as Array<Record<string, unknown>>;
           const relIndex = relationships.findIndex(
             (rel) =>
-              rel.fromModel === payload.originalFromModel &&
-              rel.fromColumn === payload.originalFromColumn &&
-              rel.toModel === payload.originalToModel &&
-              rel.toColumn === payload.originalToColumn,
+              sameRelationship(rel as unknown as RelationshipEndpoints, original),
           );
           if (relIndex === -1) {
             throw new Error('Relationship not found.');
           }
 
           // Check for duplicate at new key
-          const keyChanged =
-            payload.fromModel !== payload.originalFromModel ||
-            payload.fromColumn !== payload.originalFromColumn ||
-            payload.toModel !== payload.originalToModel ||
-            payload.toColumn !== payload.originalToColumn;
+          const keyChanged = !sameRelationship(payload, original);
 
           if (keyChanged) {
             const isDuplicate = relationships.some(
               (rel, idx) =>
                 idx !== relIndex &&
-                rel.fromModel === payload.fromModel &&
-                rel.fromColumn === payload.fromColumn &&
-                rel.toModel === payload.toModel &&
-                rel.toColumn === payload.toColumn,
+                sameRelationship(rel as unknown as RelationshipEndpoints, payload),
             );
             if (isDuplicate) {
               throw new Error('A relationship with this key already exists.');
@@ -2923,6 +2913,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
             fromColumn: payload.fromColumn,
             toModel: payload.toModel,
             toColumn: payload.toColumn,
+            ...(payload.columnPairs ? { columnPairs: payload.columnPairs } : {}),
             cardinality: payload.cardinality,
           };
         },
@@ -3179,15 +3170,15 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
                 this.projectAdapter.assertWritableModel(test.toModel);
               }
               const alreadyExists = relationships.some(
-                (r) => r.fromModel === test.fromModel && r.fromColumn === test.fromColumn &&
-                        r.toModel === test.toModel && r.toColumn === test.toColumn,
+                (r) => sameRelationship(r as unknown as RelationshipEndpoints, test),
               );
               if (!alreadyExists) {
                 relationships.push({
                   fromModel: test.fromModel, fromColumn: test.fromColumn,
                   toModel: test.toModel, toColumn: test.toColumn,
+                  ...(test.columnPairs ? { columnPairs: test.columnPairs } : {}),
                   cardinality: this.projectAdapter instanceof SqlmeshProjectAdapter
-                    ? this.projectAdapter.relationshipCardinality(test.fromModel, test.fromColumn, test.toModel, test.toColumn) : 'many-to-one',
+                    ? this.projectAdapter.relationshipCardinality(test.fromModel, test.fromColumn, test.toModel, test.toColumn, test.columnPairs) : 'many-to-one',
                 });
               }
             }
@@ -3286,15 +3277,15 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
               this.projectAdapter.assertWritableModel(test.toModel);
             }
             const alreadyExists = relationships.some(
-              (r) => r.fromModel === test.fromModel && r.fromColumn === test.fromColumn &&
-                      r.toModel === test.toModel && r.toColumn === test.toColumn,
+              (r) => sameRelationship(r as unknown as RelationshipEndpoints, test),
             );
             if (!alreadyExists) {
               relationships.push({
                 fromModel: test.fromModel, fromColumn: test.fromColumn,
                 toModel: test.toModel, toColumn: test.toColumn,
+                  ...(test.columnPairs ? { columnPairs: test.columnPairs } : {}),
                 cardinality: this.projectAdapter instanceof SqlmeshProjectAdapter
-                  ? this.projectAdapter.relationshipCardinality(test.fromModel, test.fromColumn, test.toModel, test.toColumn) : 'many-to-one',
+                  ? this.projectAdapter.relationshipCardinality(test.fromModel, test.fromColumn, test.toModel, test.toColumn, test.columnPairs) : 'many-to-one',
               });
             }
           }
@@ -3767,25 +3758,17 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
             ),
           });
           referencedModels.add(modelName);
-        } else if (kind === 'rel') {
-          const [, fromModel, fromColumn, toModel, toColumn] = parts;
-          const relDisc = report.relationships.find(
-            (r) =>
-              r.fromModel === fromModel &&
-              r.fromColumn === fromColumn &&
-              r.toModel === toModel &&
-              r.toColumn === toColumn,
-          );
+        } else if (kind === 'rel' || kind === 'rel-tuple') {
+          const relDisc = report.relationships.find(r => relationshipKey(r.fromModel, r.fromColumn, r.toModel, r.toColumn, r.columnPairs) === key);
           if (!relDisc || relDisc.status === 'matched') continue;
 
           const action = deriveRelationshipAction(relDisc.status, groundTruth, report.sourceStage);
           if (!action) continue;
 
+          const { fromModel, fromColumn, toModel, toColumn } = relDisc;
           relationships.push({
-            fromModel,
-            fromColumn,
-            toModel,
-            toColumn,
+            fromModel, fromColumn, toModel, toColumn,
+            ...(relDisc.columnPairs ? { columnPairs: relDisc.columnPairs } : {}),
             discrepancyStatus: relDisc.status,
             groundTruth,
             action,
@@ -3861,6 +3844,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
         columns,
         relationships,
         requiresCompile,
+        ...(relationships.some(r => r.columnPairs) ? { relationshipTemplates: { tuple: path.join(this.context.extensionUri.fsPath, 'dist', 'dbt_erd_relationship_tuple.sql') } } : {}),
       };
 
       // Write to disk directly (not via WorkspaceEdit) — this is a generated output
@@ -3924,6 +3908,8 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     if (JSON.stringify(report) !== JSON.stringify(panel.lastDiscrepancyReport)) throw new Error('The comparison changed. Compare again before choosing resolutions.');
     const plan = buildSqlmeshSyncPlan({ report, selections, snapshot: context.snapshot,
       domainPath: context.domainPath, semanticDir: context.semanticDir, preconditions: context.preconditions, logical: context.unified });
+    plan.relationshipTemplates = { single: path.join(this.context.extensionUri.fsPath, 'dist', 'sqlmesh_erd_relationship.sql'),
+      tuple: path.join(this.context.extensionUri.fsPath, 'dist', 'sqlmesh_erd_relationship_tuple.sql') };
     assertSqlmeshCreationTargets(this.workspaceRoot, plan);
     if (plan.direction === 'logical-to-source') {
       plan.refreshCommand = sqlmeshRefreshCommand({ root: this.workspaceRoot, semanticDir: context.semanticDir,
@@ -3953,9 +3939,9 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     if (!removals.length) return;
     // A removal names the export's spelling; other domains hold the logical one.
     const foldingOf = foldingByModel(physical);
-    const references = (r: { fromModel: string; fromColumn: string; toModel: string; toColumn: string }, model: string, column: string) =>
-      (r.fromModel === model && sameIdentifier(r.fromColumn, column, foldingOf(model)))
-      || (r.toModel === model && sameIdentifier(r.toColumn, column, foldingOf(model)));
+    const references = (r: RelationshipEndpoints, model: string, column: string) =>
+      relationshipPairs(r).some(p => (r.fromModel === model && sameIdentifier(p.fromColumn, column, foldingOf(model)))
+        || (r.toModel === model && sameIdentifier(p.toColumn, column, foldingOf(model))));
     for (const other of this.domainService.listDomains(this.workspaceRoot, semanticDir)) {
       if (other.filePath === domainFile) continue;
       const domain = this.domainService.getDomain(other.filePath);

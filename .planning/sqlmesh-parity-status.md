@@ -48,25 +48,40 @@ real-host checks**, and production VSIX packaging. PostgreSQL was not restarted 
 retested during this follow-up; the earlier five successful cases remain historical
 acceptance evidence. Harness versions and schema content are unchanged.
 
-Known display follow-up: a warehouse-only native column can fold onto an existing
-logical alias (for example, binding `order_note: amount` plus observed `ORDER_NOTE`).
-Physical can show two `order_note` rows with distinct `nativeName` values. The view
-remains available and sync refuses the collision. Give conflicting observed rows
-an explicit native identity/label without weakening write guards; this was left
-outside the five reviewed fixes.
+## Pilot and composite relationships (2026-09-22)
+
+The display follow-up is fixed in **3930c47**: conflicting warehouse-only rows get
+native display labels while source aliases, comparisons and write guards remain intact.
+
+The new sibling `../erd-studio-sqlmesh-pilot` contains 10 native models, 40 customers
+and 300 order lines. Installed-extension acceptance covered import, tuple editing
+and undo, automatic source refresh, metadata-to-logical sync, read-only warehouse
+inspection, alias-conflict refusal and a reviewed domain-plan artifact. Final
+Logical/Physical comparison is all matched after an explicit disposable dev deployment.
+
+Composite FKs now preserve complete ordered `columnPairs` across both adapters,
+editor mutations, display, comparison, sync and MCP. Executable SQLMesh audits and
+dbt generic tests check whole parent tuples with MATCH SIMPLE null semantics.
+Independent single-column tests no longer imply composite uniqueness. Shared
+harness versions are **dbt 18 / SQLMesh 6**; v5 single-column domains remain compatible.
+
+Current verification: **1,772 JS tests / 78 files**, **28 Python passed + 5 PostgreSQL
+skipped**, **one real dbt/DuckDB integration test**, **16 MCP smoke checks**, **10 SQLMesh
++ 2 dbt real-host checks**, TypeScript and production VSIX. Tuple execution is verified
+on DuckDB in both engines; PostgreSQL was not restarted. See
+[pilot evidence and review scope](sqlmesh-pilot-composite-results.md).
 
 ## Remaining limitations and next decisions
 
 | Area | Boundary / next step |
 |---|---|
-| Composite FK | Shared schema stores single-column edges. Add explicit ordered tuple groups and a real tuple audit before claiming compound FK/cardinality parity. |
+| Composite FK portability | Implemented and tested with SQLMesh/dbt on DuckDB. Verify tuple audits/tests against each additional warehouse; custom audit/test conventions are not automatically mapped. |
 | Model deletion | Logical detachment retains shared YAML. Native deletion remains manual pending downstream/state/history impact review. |
 | Source synthesis | Assisted SQL creation/edits require known expressions and model kind. Generated/Python/seed/external source changes stay manual. |
 | Warehouse breadth | DuckDB files and PostgreSQL, single native project/gateway and built-in scheduler. Validate a specific next engine with restricted credentials. |
 | Freshness | Standard local input hashes; external imports, environment variables, remote inputs and warehouse changes require explicit refresh/inspection. |
 | Portability | Windows/macOS, other SQLMesh versions, production scale and cloud TLS/authentication remain unverified. |
 
-Recommended next step: resolve the observed-column display ambiguity, then pilot
-on a representative native SQLMesh project. The review begun with
-[handoff 12](sqlmesh-review-handoff-12-near-parity.md) is covered above. Choose tuple
-relationships or another warehouse engine after the pilot. No deployment is implied.
+Recommended next step: independent review of the tuple change, then select a real
+warehouse/project for a restricted-credential acceptance run. Native source deletion
+remains a separate design decision. No production deployment is implied.

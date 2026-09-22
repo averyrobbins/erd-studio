@@ -1,3 +1,4 @@
+import type { ColumnPair } from './relationships';
 /**
  * Types for display-ready domain data sent to the webview.
  *
@@ -133,6 +134,7 @@ export interface DisplayRelationship {
   fromColumn: string;
   toModel: string;
   toColumn: string;
+  columnPairs?: ColumnPair[];
   cardinality: Cardinality;
 }
 

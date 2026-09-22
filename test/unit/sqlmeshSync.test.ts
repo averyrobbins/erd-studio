@@ -185,3 +185,33 @@ it('detects changed exports, source or shared logical files and newly added doma
   fs.writeFileSync(path.join(root, '.erd-studio/silver/other.json'), '{}');
   expect(() => assertSqlmeshPlanCurrent(prepared, captureSqlmeshInputs(root, '.erd-studio', options.snapshot, domainPath))).toThrow('changed');
 });
+
+it.each([false, true])('syncs an entire tuple independently of a single edge sharing its anchor (%s)', async reversed => {
+  const { domain, physical, logical, plan } = await setup();
+  const single = physical.relationships[0];
+  const tuple = { ...single, columnPairs: [{ fromColumn: single.fromColumn, toColumn: single.toColumn }, { fromColumn: 'amount', toColumn: 'name' }] };
+  physical.relationships.push(tuple);
+  const prepared = plan({ [relationshipKey(tuple.fromModel,tuple.fromColumn,tuple.toModel,tuple.toColumn,tuple.columnPairs)]: 'physical' }, reversed);
+  expect(prepared.relationships).toHaveLength(1);
+  expect(prepared.relationships[0].columnPairs).toEqual(tuple.columnPairs);
+  const patch = applySqlmeshLogicalPlan(prepared, domain, physical);
+  expect(patch.relationships).toEqual([single, tuple]);
+  domain.logical.relationships = patch.relationships;
+  expect(applySqlmeshLogicalPlan(prepared, domain, physical).relationships).toEqual([single, tuple]);
+  logical.relationships = [single, tuple];
+  physical.relationships = [single];
+  const removal = plan({ [relationshipKey(tuple.fromModel,tuple.fromColumn,tuple.toModel,tuple.toColumn,tuple.columnPairs)]: 'physical' }, reversed);
+  expect(applySqlmeshLogicalPlan(removal, domain, physical).relationships).toEqual([single]);
+});
+
+it('refuses a secondary tuple endpoint removal unless the entire relationship is also removed', async () => {
+  const { domain, physical, logical, plan } = await setup();
+  const tuple = { ...physical.relationships[0], columnPairs: [{ fromColumn: 'customer_id', toColumn: 'customer_id' }, { fromColumn: 'amount', toColumn: 'name' }] };
+  domain.logical.relationships = [tuple]; logical.relationships = [tuple];
+  physical.relationships = [];
+  physical.models.find(m => m.name === 'fct_order')!.columns = physical.models.find(m => m.name === 'fct_order')!.columns.filter(c => c.name !== 'amount');
+  expect(() => applySqlmeshLogicalPlan(plan({ [columnKey('fct_order','amount')]: 'physical' }), domain, physical)).toThrow('endpoint');
+  const prepared = plan({ [columnKey('fct_order','amount')]: 'physical',
+    [relationshipKey(tuple.fromModel,tuple.fromColumn,tuple.toModel,tuple.toColumn,tuple.columnPairs)]: 'physical' });
+  expect(applySqlmeshLogicalPlan(prepared, domain, physical).relationships).toEqual([]);
+});

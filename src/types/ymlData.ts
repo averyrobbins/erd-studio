@@ -1,3 +1,4 @@
+import type { ColumnPair } from './relationships';
 /**
  * Types for dbt schema YAML data as parsed by YmlParserService.
  *
@@ -42,6 +43,7 @@ export interface YmlRelationshipTest {
   toModel: string;
   /** PK column name (from the `field` kwarg) */
   toColumn: string;
+  columnPairs?: ColumnPair[];
 }
 
 /** Model info extracted from a dbt schema .yml file. */

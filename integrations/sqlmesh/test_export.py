@@ -181,6 +181,49 @@ class ExportTest(unittest.TestCase):
         finally:
             context.close()
 
+    def test_tuple_audit_exports_one_edge_and_checks_same_parent_row(self):
+        shutil.copy(ROOT / "integrations/sqlmesh/audits/erd_relationship_tuple.sql", self.root / "audits")
+        (self.root / "models/tuple_parent.sql").write_text(
+            "MODEL (name analytics.tuple_parent, kind FULL, audits (unique_combination_of_columns(columns := (a, b)))); "
+            "SELECT 1::INT AS a, 10::INT AS b;")
+        (self.root / "models/tuple_child.sql").write_text(
+            'MODEL (name analytics.tuple_child, kind FULL, depends_on (analytics.tuple_parent), '
+            'audits (erd_relationship_tuple(pairs := (("Child A", a), (y, b)), to := analytics.tuple_parent))); '
+            'SELECT 1::INT AS "Child A", 10::INT AS y;')
+        result = self.export()
+        edge = next(r for r in result["relationships"] if r["audit"] == "erd_relationship_tuple")
+        self.assertEqual(edge["columnPairs"], [{"fromColumn": "child a", "toColumn": "a"}, {"fromColumn": "y", "toColumn": "b"}])
+        self.assertEqual(edge["fromColumn"], "child a")
+        self.assertEqual(edge["toColumn"], "a")
+        context = Context(paths=str(self.root), load_state=False)
+        try:
+            model = context.get_model("analytics.tuple_child")
+            name, kwargs = model.audits[0]
+            query = model.render_audit_query(context._audits[name], **kwargs)
+            import duckdb
+            with duckdb.connect() as db:
+                db.execute("CREATE SCHEMA analytics")
+                db.execute("CREATE TABLE analytics.tuple_parent(a INT, b INT)")
+                db.execute("INSERT INTO analytics.tuple_parent VALUES (1, 10), (2, 20), (NULL, 99)")
+                db.execute('CREATE TABLE analytics.tuple_child("Child A" INT, y INT)')
+                db.execute("INSERT INTO analytics.tuple_child VALUES (1,10), (1,10), (1,20), (NULL,20), (1,NULL), (3,99)")
+                self.assertEqual(sorted(db.execute(query.sql(dialect="duckdb")).fetchall()), [(1,20), (3,99)])
+        finally:
+            context.close()
+
+    def test_tuple_export_refuses_duplicate_or_unavailable_components(self):
+        shutil.copy(ROOT / "integrations/sqlmesh/audits/erd_relationship_tuple.sql", self.root / "audits")
+        for pairs in ['((a, customer_id), (a, name))', '((a, customer_id), (b, customer_id))',
+                      '((a, customer_id), (missing, name))', '((a, customer_id), (b, missing))']:
+            with self.subTest(pairs=pairs):
+                (self.root / "models/tuple_child.sql").write_text(
+                    f'MODEL (name analytics.tuple_child, kind FULL, depends_on (analytics.dim_customer), '
+                    f'audits (erd_relationship_tuple(pairs := {pairs}, to := analytics.dim_customer))); '
+                    'SELECT 1::INT AS a, 10::INT AS b;')
+                result = self.export()
+                self.assertFalse(any(r["audit"] == "erd_relationship_tuple" for r in result["relationships"]))
+                self.assertTrue(any("arguments" in d or "columns unavailable" in d for d in result["diagnostics"]))
+
     def test_dialect_normalization_preserves_distinct_quoted_columns(self):
         (self.root / "models/case_sensitive.sql").write_text('''
 MODEL (name analytics.case_sensitive, dialect snowflake,

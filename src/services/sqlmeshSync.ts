@@ -1,3 +1,4 @@
+import { relationshipPairs, relationshipColumns } from '../types/relationships';
 /** Native SQLMesh reconciliation: deterministic logical edits, reviewable source-edit plans. */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -41,6 +42,7 @@ export interface SqlmeshSyncPlan {
   instructions: string[];
   /** Explicit source-only exporter invocation supplied by the installed editor. */
   refreshCommand?: { executable: string; args: string[] };
+  relationshipTemplates?: { single: string; tuple: string };
   deployment: 'separate-user-action';
 }
 
@@ -51,7 +53,8 @@ export const SQLMESH_SYNC_INSTRUCTIONS = [
   'metadata-to-logical plans are applied by the editor. For logical-to-source, edit only the selected native SQL MODEL definitions, SQL projections and audits. Preserve existing logic, grain, incremental kind, time columns, partitions and other audits.',
   'Whole-model add-to-physical actions create the modelContext sourcePath using its explicitly bound modelId and the referenced logical design. Verify every absentPaths target is absent and its parent resolves inside the project before writing; never overwrite an existing file. Ground all column expressions in project sources and design rationale. Choose kind/history behavior deliberately and ask if business logic is unknown. A remove-from-logical action detaches the model and its relationships from this domain; shared logical files remain in the library.',
   'Use each column resolvedDataType, not the stage-relative types. Adding a column needs a real expression grounded in the project; ask the user if the expression or backfill semantics cannot be determined. Never fabricate data or silently append NULL placeholders.',
-  'Relationship actions mean erd_relationship(column := ..., to := qualified_model, field := ...) audits, with unfiltered unique_values or unique_combination_of_columns only when justified. The parent must be a dependency of the child: SQLMesh builds its DAG from the query, not from audits, so when the child query does not select from the parent add depends_on (qualified_model) to the child MODEL — otherwise the audit can run before the parent table exists and a fresh deployment fails. Do not turn grain, lineage or references into enforced keys. Review all consumers before changing shared uniqueness audits.',
+  'A relationship with columnPairs is one ordered tuple. Use erd_relationship_tuple(pairs := ((child_col, parent_col), ...), to := qualified_model), copying relationshipTemplates.tuple into audits/ if absent (relationshipTemplates.single supplies the single-column audit). Resolve every pair through columnNames. Never replace it with independent single-column audits. Partial-null child tuples are excluded (MATCH SIMPLE); use separate not_null audits if required. Uniqueness must cover a key within that same tuple.',
+  'Single-column relationship actions mean erd_relationship(column := ..., to := qualified_model, field := ...) audits, with unfiltered unique_values or unique_combination_of_columns only when justified. The parent must be a dependency of the child: SQLMesh builds its DAG from the query, not from audits, so when the child query does not select from the parent add depends_on (qualified_model) to the child MODEL — otherwise the audit can run before the parent table exists and a fresh deployment fails. Do not turn grain, lineage or references into enforced keys. Review all consumers before changing shared uniqueness audits.',
   'Do not edit generated SQL, Python generators, seeds or external model definitions through this workflow. Those require a separate manual change. Preserve quoted identifiers and dialect syntax.',
   'After editing, invoke refreshCommand.executable with refreshCommand.args as separate arguments, from the project root. This is the installed source-only exporter using load_state=False: it loads/validates the project and refreshes inferred metadata without initializing SQLMesh state. Do not hand-edit sqlmesh.json. If refreshCommand is absent, ask the user to Refresh Project Metadata in ERD Studio. Compare the refreshed model columns/relationships with the selected resolutions and report any remaining differences.',
   'Do not use the sqlmesh render CLI or a default Context for validation: these can initialize or migrate warehouse state even without a deployment. Run unit tests only against a known disposable test connection. Preserve metadata.gateway/config and report validation performed; a source edit is not a warehouse deployment.',
@@ -155,10 +158,11 @@ export function buildSqlmeshSyncPlan(options: {
   }
   for (const r of report.relationships) {
     if (r.status === 'matched') continue;
-    const truth = choose(relationshipKey(r.fromModel, r.fromColumn, r.toModel, r.toColumn));
+    const truth = choose(relationshipKey(r.fromModel, r.fromColumn, r.toModel, r.toColumn, r.columnPairs));
     if (!truth) continue;
     if (models.some(m => m.action === 'remove-from-logical' && [r.fromModel, r.toModel].includes(m.modelName))) continue;
     relationships.push({ fromModel: r.fromModel, fromColumn: r.fromColumn, toModel: r.toModel, toColumn: r.toColumn,
+      ...(r.columnPairs ? { columnPairs: r.columnPairs } : {}),
       discrepancyStatus: r.status, groundTruth: truth, action: deriveRelationshipAction(r.status, truth, report.sourceStage)!,
       sourceCardinality: r.sourceCardinality, targetCardinality: r.targetCardinality,
       resolvedCardinality: truth === report.sourceStage ? r.sourceCardinality : r.targetCardinality });
@@ -255,19 +259,22 @@ export function applySqlmeshLogicalPlan(plan: SqlmeshSyncPlan, domain: UnifiedDo
     changed.add(m.name);
   }
   const same = (a: Relationship, b: RelationshipResolution) => a.fromModel === b.fromModel && a.toModel === b.toModel
-    && sameIdentifier(a.fromColumn, b.fromColumn, foldingOf(a.fromModel)) && sameIdentifier(a.toColumn, b.toColumn, foldingOf(a.toModel));
+    && relationshipPairs(a).length === relationshipPairs(b).length
+    && relationshipPairs(a).every((p, i) => sameIdentifier(p.fromColumn, relationshipPairs(b)[i].fromColumn, foldingOf(a.fromModel))
+      && sameIdentifier(p.toColumn, relationshipPairs(b)[i].toColumn, foldingOf(a.toModel)));
   for (const r of plan.relationships) {
     const existing = relationships.find(rel => same(rel, r));
     if (r.action === 'remove-relationship-from-logical') relationships = relationships.filter(rel => !same(rel, r));
     else if (r.action === 'add-relationship-to-logical' && r.resolvedCardinality) {
-      if (!existing) relationships.push({ fromModel: r.fromModel, fromColumn: logicalSpelling(r.fromColumn, foldingOf(r.fromModel)),
-        toModel: r.toModel, toColumn: logicalSpelling(r.toColumn, foldingOf(r.toModel)), cardinality: r.resolvedCardinality });
+      if (!existing) relationships.push({ fromModel: r.fromModel, toModel: r.toModel,
+        ...relationshipColumns(relationshipPairs(r).map(p => ({ fromColumn: logicalSpelling(p.fromColumn, foldingOf(r.fromModel)),
+          toColumn: logicalSpelling(p.toColumn, foldingOf(r.toModel)) }))), cardinality: r.resolvedCardinality });
     } else if (r.action === 'update-cardinality-in-logical' && existing && r.resolvedCardinality) existing.cardinality = r.resolvedCardinality;
     else throw new Error(`Unsupported logical action: ${r.action}`);
   }
   for (const r of relationships) {
     const has = (name: string, col: string) => !!findByIdentifier(models.find(m => m.name === name)?.columns ?? [], col, foldingOf(name));
-    if (!has(r.fromModel, r.fromColumn) || !has(r.toModel, r.toColumn)) throw new Error('A selected column removal leaves a relationship without an endpoint. Select that relationship for removal too.');
+    if (!relationshipPairs(r).every(p => has(r.fromModel, p.fromColumn) && has(r.toModel, p.toColumn))) throw new Error('A selected column removal leaves a relationship without an endpoint. Select that relationship for removal too.');
   }
   return { models: models.filter(m => changed.has(m.name)), relationships,
     ...(removed.size ? { modelNames: models.map(m => m.name) } : {}) };

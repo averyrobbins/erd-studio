@@ -1,3 +1,4 @@
+import type { ColumnPair } from './relationships';
 /**
  * Message protocol types for extension ↔ webview communication.
  *
@@ -271,6 +272,7 @@ export interface AddRelationshipMessage {
     fromColumn: string;
     toModel: string;
     toColumn: string;
+    columnPairs?: ColumnPair[];
     cardinality: Cardinality;
   };
 }
@@ -310,17 +312,18 @@ export interface RemoveModelsMessage {
   };
 }
 
-/** Composite identity of an FK relationship: (fromModel, fromColumn, toModel, toColumn). */
+/** Identity of an FK: both models and its complete ordered column pairs. */
 export interface RelationshipKey {
   fromModel: string;
   fromColumn: string;
   toModel: string;
   toColumn: string;
+  columnPairs?: ColumnPair[];
 }
 
 /**
  * Request to remove an FK relationship.
- * Identity is the composite key: (fromModel, fromColumn, toModel, toColumn).
+ * Identity includes both models and the complete ordered column pairs.
  */
 export interface RemoveRelationshipMessage {
   type: 'removeRelationship';
@@ -341,7 +344,7 @@ export interface RemoveRelationshipsMessage {
 
 /**
  * Request to update a relationship's cardinality.
- * Identity is the composite key: (fromModel, fromColumn, toModel, toColumn).
+ * Identity includes both models and the complete ordered column pairs.
  */
 export interface UpdateRelationshipMessage {
   type: 'updateRelationship';
@@ -350,6 +353,7 @@ export interface UpdateRelationshipMessage {
     fromColumn: string;
     toModel: string;
     toColumn: string;
+    columnPairs?: ColumnPair[];
     cardinality: Cardinality;
   };
 }
@@ -365,11 +369,13 @@ export interface EditRelationshipMessage {
     originalFromColumn: string;
     originalToModel: string;
     originalToColumn: string;
+    originalColumnPairs?: ColumnPair[];
     /** New values (may be same as original) */
     fromModel: string;
     fromColumn: string;
     toModel: string;
     toColumn: string;
+    columnPairs?: ColumnPair[];
     cardinality: Cardinality;
   };
 }

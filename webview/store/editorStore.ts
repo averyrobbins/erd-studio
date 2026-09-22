@@ -1,3 +1,4 @@
+import type { ColumnPair } from '../../src/types/relationships';
 /**
  * Zustand store for the webview editor state.
  *
@@ -41,6 +42,7 @@ export interface FkDialogEditData {
   fromColumn: string;
   toModel: string;
   toColumn: string;
+  columnPairs?: ColumnPair[];
   cardinality: import('../../src/types/semantic').Cardinality;
 }
 

@@ -258,3 +258,50 @@ it('imports explicitly bound case siblings through the editor with native hints 
   const switched = (panel._postedMessages as any[]).filter(m => m.type === 'stageData').at(-1);
   expect(JSON.stringify(switched)).toContain('"nativeName":"ID"');
 });
+
+const tupleRelationship = {
+  fromModel: 'fct_order', fromColumn: 'customer_id', toModel: 'dim_customer', toColumn: 'customer_id',
+  columnPairs: [{ fromColumn: 'customer_id', toColumn: 'customer_id' }, { fromColumn: 'amount', toColumn: 'name' }],
+  cardinality: 'many-to-one' as const,
+};
+const savedRelationships = () => JSON.parse(fs.readFileSync(path.join(root, '.erd-studio/silver/orders.json'), 'utf8')).logical.relationships;
+
+it('creates, updates, edits and removes a tuple without touching a single edge sharing its anchor', async () => {
+  const single = savedRelationships()[0];
+  await panel._simulateMessage({ type: 'addRelationship', payload: tupleRelationship });
+  expect(error()).toBeUndefined();
+  expect(edits).toHaveBeenCalledTimes(1);
+  expect(savedRelationships()).toEqual([single, tupleRelationship]);
+  await panel._simulateMessage({ type: 'updateRelationship', payload: { ...tupleRelationship, cardinality: 'one-to-one' } });
+  expect(savedRelationships()[0]).toEqual(single);
+  expect(savedRelationships()[1].cardinality).toBe('one-to-one');
+  const changed = { ...tupleRelationship, columnPairs: [tupleRelationship.columnPairs[0], { fromColumn: 'order_id', toColumn: 'name' }] };
+  await panel._simulateMessage({ type: 'editRelationship', payload: { ...changed,
+    originalFromModel: tupleRelationship.fromModel, originalFromColumn: tupleRelationship.fromColumn,
+    originalToModel: tupleRelationship.toModel, originalToColumn: tupleRelationship.toColumn,
+    originalColumnPairs: tupleRelationship.columnPairs } });
+  expect(savedRelationships()).toEqual([single, changed]);
+  await panel._simulateMessage({ type: 'removeRelationships', payload: { relationships: [changed] } });
+  expect(savedRelationships()).toEqual([single]);
+  expect(edits).toHaveBeenCalledTimes(4);
+});
+
+it('renames a secondary tuple column and cascades its deletion through the atomic editor pipeline', async () => {
+  await panel._simulateMessage({ type: 'addRelationship', payload: tupleRelationship });
+  await panel._simulateMessage({ type: 'updateColumn', payload: { modelName: 'fct_order', oldColumnName: 'amount', column: { name: 'total', dataType: 'TEXT' } } });
+  expect(error()).toBeUndefined();
+  expect(savedRelationships()[1].columnPairs[1].fromColumn).toBe('total');
+  expect(fs.readFileSync(path.join(root, '.erd-studio/logical-models/fct_order.yml'), 'utf8')).toContain('# Keep this comment');
+  await panel._simulateMessage({ type: 'removeColumn', payload: { modelName: 'fct_order', columnName: 'total' } });
+  expect(savedRelationships()).toHaveLength(1);
+  expect(savedRelationships()[0].columnPairs).toBeUndefined();
+  expect(edits).toHaveBeenCalledTimes(3);
+});
+
+it('refuses malformed tuple payloads before any edit', async () => {
+  const before = savedRelationships();
+  await panel._simulateMessage({ type: 'addRelationship', payload: { ...tupleRelationship, columnPairs: [tupleRelationship.columnPairs[0]] } });
+  expect(error()).toContain('Invalid relationship');
+  expect(edits).not.toHaveBeenCalled();
+  expect(savedRelationships()).toEqual(before);
+});

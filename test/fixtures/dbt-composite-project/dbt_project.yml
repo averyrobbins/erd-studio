@@ -1,0 +1,8 @@
+name: erd_tuple_pilot
+version: '1.0.0'
+config-version: 2
+profile: erd_tuple_pilot
+model-paths: [models]
+models:
+  erd_tuple_pilot:
+    +materialized: table

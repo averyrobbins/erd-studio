@@ -1,3 +1,4 @@
+import type { ColumnPair } from './relationships';
 /**
  * Types for dbt manifest.json data as parsed by ManifestService.
  *
@@ -28,6 +29,7 @@ export interface ManifestRelationshipTest {
   toModel: string;
   /** PK column name (from test_metadata.kwargs.field) */
   toColumn: string;
+  columnPairs?: ColumnPair[];
 }
 
 /** Model info extracted from a dbt manifest node. */

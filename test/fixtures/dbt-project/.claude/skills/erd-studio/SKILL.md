@@ -267,6 +267,21 @@ Every entry in "in source but not in YAML" must have a specific reason. A class-
 | `toColumn` | Yes | PK column name |
 | `cardinality` | Yes | `many-to-one`, `one-to-one`, `one-to-many`, or `many-to-many` |
 
+
+For a composite FK, add `columnPairs` containing the **complete ordered tuple**, with at least two
+`{ "fromColumn": "product_id", "toColumn": "product_id" }` pairs. The required
+`fromColumn` / `toColumn` fields equal the first pair; they are display anchors, not an
+additional relationship. Each side must use distinct nonempty column names. Without
+`columnPairs`, the existing single-column format is unchanged. Use the updated extension
+when editing domains containing tuples; older editors do not understand them.
+
+Identity includes both models and every ordered pair. Tuples sharing an anchor are distinct.
+The editor renders one edge labelled with its column count, and edits, renames, deletes,
+comparison and sync operate on the whole group. Reordering both sides preserves SQL tuple
+membership, but changes the editor's ordered identity. Never combine independent relationship
+tests into a tuple. A side is "one" only when a declared unique key is contained in that
+relationship's own column set; a composite key does not make its individual components unique.
+
 **Direction:** `fromModel` is always the FK side, `toModel` is the PK side. FK column names should match the PK column name of the referenced table.
 
 ---
@@ -314,9 +329,9 @@ A model known **only** by the file that defines it renders as a real node with *
 | Yes | No | `one-to-many` |
 | No | No | `many-to-many` |
 
-For composite keys, `dbt_utils.unique_combination_of_columns` is recognized when **all** columns in the group are covered by relationship tests between the same model pair.
+For composite keys, `dbt_utils.unique_combination_of_columns` is recognized when **all** key columns belong to this one relationship tuple. Independent single-column tests do not count.
 
-Recognized test types: `relationships`, `relationships_where`, and any test whose name starts with `relationships`.
+Recognized test types: model-level `erd_relationship_tuple`, `relationships`, `relationships_where`, and any test whose name starts with `relationships`.
 
 ### Implementing Logical → Physical
 
@@ -337,4 +352,4 @@ When asked to execute a sync plan, or when `.erd-studio/.sync-plan.json` exists:
 2. Read `.erd-studio/.sync-plan.json` for the specific actions to execute
 3. Follow the execution steps in SYNC.md to reconcile logical and physical models
 
-<!-- erd-studio-harness: 17 -->
+<!-- erd-studio-harness: 18 -->

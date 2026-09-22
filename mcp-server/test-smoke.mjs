@@ -18,6 +18,13 @@ const bound = JSON.parse(fs.readFileSync(boundFile, 'utf8'));
 delete bound.integrity;
 bound.models.find(m => m.name === 'fct_order').columnBindings = { customer_key: 'customer_id' };
 bound.pendingModels = [{ name: 'new_model', id: '"analytics"."new_model"', dialect: 'duckdb' }];
+bound.relationships.push({ ...bound.relationships[0], audit: 'erd_relationship_tuple', columnPairs: [
+  { fromColumn: 'customer_id', toColumn: 'customer_id' }, { fromColumn: 'amount', toColumn: 'name' },
+] });
+const tupleDomainPath = path.join(BOUND_PATH, '.erd-studio/silver/orders.json');
+const tupleDomain = JSON.parse(fs.readFileSync(tupleDomainPath, 'utf8'));
+tupleDomain.logical.relationships.push({ ...tupleDomain.logical.relationships[0], columnPairs: bound.relationships[1].columnPairs });
+fs.writeFileSync(tupleDomainPath, JSON.stringify(tupleDomain));
 fs.writeFileSync(boundFile, JSON.stringify(bound));
 const SERVER = path.resolve(__dirname, 'dist/index.js');
 
@@ -174,6 +181,21 @@ async function main() {
   if (boundData.pendingModels?.[0]?.name === 'new_model' && !boundData.models?.some(m => m.name === 'new_model')) {
     console.log('✅ SQLMesh pending bindings remain separate from loaded models');
   } else { fail('SQLMesh pending binding was lost or presented as a loaded model'); }
+
+  const tuple = boundData.relationships?.find(r => r.columnPairs);
+  if (tuple?.columnPairs.length === 2 && tuple.columnPairs[0].fromColumn === 'customer_key'
+      && tuple.columnPairs[1].fromColumn === 'amount' && tuple.columnPairs[1].toColumn === 'name') {
+    console.log('✅ SQLMesh MCP preserves ordered tuples through native column bindings');
+  } else { fail('SQLMesh MCP flattened or lost tuple endpoints'); }
+  for (const name of ['read_domain', 'list_manifest_models']) {
+    const response = await rpc('tools/call', { name, arguments: { project_path: BOUND_PATH,
+      ...(name === 'read_domain' ? { layer: 'silver', domain: 'orders' } : {}) } });
+    const result = JSON.parse(response.result?.content?.[0]?.text || '{}');
+    const rels = name === 'read_domain' ? result.relationships : result.models?.find(m => m.name === 'fct_order')?.relationships;
+    if (rels?.some(r => r.column_pairs?.length === 2 && r.column_pairs[1].from_column === 'amount')) {
+      console.log(`✅ ${name} preserves ordered tuple pairs`);
+    } else { fail(`${name} dropped the tuple pairs`); }
+  }
 
   // 8. Call get_editor_setup
   console.log('\n--- get_editor_setup ---');

@@ -1,3 +1,4 @@
+import { relationshipPairs, relationshipIdentity, validRelationshipColumns, type ColumnPair } from '../types/relationships';
 /**
  * DomainService — reads semantic domain JSON files from disk.
  *
@@ -33,6 +34,7 @@ interface RelationshipTest {
   fromColumn: string;
   toModel: string;
   toColumn: string;
+  columnPairs?: ColumnPair[];
 }
 
 const DEFAULT_SEMANTIC_DIR = '.erd-studio';
@@ -530,6 +532,13 @@ export class DomainService {
       mergedCompositeGroups,
     );
 
+    for (const rel of relationships) {
+      const model = models.find(m => m.name === rel.fromModel);
+      for (const pair of relationshipPairs(rel)) {
+        const column = model?.columns.find(c => normaliseName(c.name) === normaliseName(pair.fromColumn));
+        if (column) column.isForeignKey = true;
+      }
+    }
     return {
       schemaVersion: unifiedDomain.schemaVersion,
       domain: unifiedDomain.domain,
@@ -689,7 +698,7 @@ export class DomainService {
       if (
         !r || typeof r !== 'object' || Array.isArray(r) ||
         typeof r.fromModel !== 'string' || typeof r.fromColumn !== 'string' ||
-        typeof r.toModel !== 'string' || typeof r.toColumn !== 'string'
+        typeof r.toModel !== 'string' || !validRelationshipColumns(r)
       ) {
         console.warn(`[DomainService] Skipping malformed relationship entry in ${filePath}: ${JSON.stringify(entry)}`);
         continue;
@@ -791,7 +800,7 @@ export class DomainService {
  * uniqueness tests:
  * - `unique` test on a column → that side is "one"
  * - `unique_combination_of_columns` → side is "one" if all columns in the
- *   composite group are covered by relationship tests between the same model pair
+ *   composite group belong to this one relationship tuple
  * - No uniqueness test → that side defaults to "many"
  *
  * Results are scoped to only models present in the domain's physical model set,
@@ -845,30 +854,9 @@ export function derivePhysicalRelationships(
     normalisedComposite.set(key, list);
   }
 
-  // Group tests by (fromModel, toModel) pair for composite unique checks
-  const pairKey = (from: string, to: string) => `${normaliseName(from)}\0${normaliseName(to)}`;
-  const testsByPair = new Map<string, RelationshipTest[]>();
-  for (const test of domainTests) {
-    const key = pairKey(test.fromModel, test.toModel);
-    let group = testsByPair.get(key);
-    if (!group) {
-      group = [];
-      testsByPair.set(key, group);
-    }
-    group.push(test);
-  }
-
   return domainTests.map(rel => ({
-    fromModel: rel.fromModel,
-    fromColumn: rel.fromColumn,
-    toModel: rel.toModel,
-    toColumn: rel.toColumn,
-    cardinality: deriveCardinality(
-      rel,
-      testsByPair.get(pairKey(rel.fromModel, rel.toModel)) ?? [],
-      normalisedUnique,
-      normalisedComposite,
-    ),
+    ...rel,
+    cardinality: deriveCardinality(rel, normalisedUnique, normalisedComposite),
   }));
 }
 
@@ -877,14 +865,15 @@ export function derivePhysicalRelationships(
  * Used to cascade-delete relationships when a column is removed.
  */
 export function relationshipReferencesColumn(
-  rel: { fromModel?: unknown; fromColumn?: unknown; toModel?: unknown; toColumn?: unknown },
+  rel: { fromModel?: unknown; fromColumn?: unknown; toModel?: unknown; toColumn?: unknown; columnPairs?: unknown },
   modelName: string,
   columnName: string,
 ): boolean {
-  return (
-    (rel.fromModel === modelName && rel.fromColumn === columnName) ||
-    (rel.toModel === modelName && rel.toColumn === columnName)
-  );
+  const { fromModel, toModel } = rel;
+  if (!validRelationshipColumns(rel)) return false;
+  return relationshipPairs(rel).some(p =>
+    (fromModel === modelName && p.fromColumn === columnName) ||
+    (toModel === modelName && p.toColumn === columnName));
 }
 
 /**
@@ -892,67 +881,18 @@ export function relationshipReferencesColumn(
  */
 function deriveCardinality(
   rel: RelationshipTest,
-  allTestsBetweenPair: RelationshipTest[],
   uniqueColumns: Map<string, Set<string>>,
   compositeUniqueGroups: Map<string, string[][]>,
 ): Cardinality {
-  const fromUnique = isColumnEffectivelyUnique(
-    rel.fromModel, rel.fromColumn, 'from',
-    allTestsBetweenPair, uniqueColumns, compositeUniqueGroups,
-  );
-  const toUnique = isColumnEffectivelyUnique(
-    rel.toModel, rel.toColumn, 'to',
-    allTestsBetweenPair, uniqueColumns, compositeUniqueGroups,
-  );
-
-  if (fromUnique && toUnique) { return 'one-to-one'; }
-  if (!fromUnique && toUnique) { return 'many-to-one'; }
-  if (fromUnique && !toUnique) { return 'one-to-many'; }
-  return 'many-to-many';
-}
-
-/**
- * Check if a column is effectively unique for cardinality purposes.
- *
- * A column is "unique" if:
- * 1. It has a standalone `unique` test, OR
- * 2. It's part of a `unique_combination_of_columns` group where ALL columns
- *    in that group are covered by relationship tests between the same model pair
- *    (meaning the full composite key is present in the relationship edges).
- *
- * `uniqueColumns` / `compositeUniqueGroups` must already be keyed by
- * normalised (lower-cased) model and column names.
- */
-function isColumnEffectivelyUnique(
-  model: string,
-  column: string,
-  side: 'from' | 'to',
-  allTestsBetweenPair: RelationshipTest[],
-  uniqueColumns: Map<string, Set<string>>,
-  compositeUniqueGroups: Map<string, string[][]>,
-): boolean {
-  const modelKey = normaliseName(model);
-  const columnKey = normaliseName(column);
-
-  // 1. Single-column unique test
-  if (uniqueColumns.get(modelKey)?.has(columnKey)) {
-    return true;
-  }
-
-  // 2. Composite unique — column must be in the group, and ALL columns in
-  //    the group must be covered by relationship tests for this model pair
-  const groups = compositeUniqueGroups.get(modelKey) ?? [];
-  const pairColumns = new Set(
-    allTestsBetweenPair.map(t => normaliseName(side === 'from' ? t.fromColumn : t.toColumn)),
-  );
-
-  for (const group of groups) {
-    if (group.includes(columnKey) && group.every(col => pairColumns.has(col))) {
-      return true;
-    }
-  }
-
-  return false;
+  const unique = (model: string, side: 'from' | 'to') => {
+    const columns = new Set(relationshipPairs(rel).map(p => normaliseName(side === 'from' ? p.fromColumn : p.toColumn)));
+    const key = normaliseName(model);
+    // A tuple containing a unique key is unique. Other edges carry no evidence for this tuple.
+    return [...(uniqueColumns.get(key) ?? [])].some(c => columns.has(c))
+      || (compositeUniqueGroups.get(key) ?? []).some(group => group.length > 0 && group.every(c => columns.has(c)));
+  };
+  const from = unique(rel.fromModel, 'from'), to = unique(rel.toModel, 'to');
+  return from ? (to ? 'one-to-one' : 'one-to-many') : (to ? 'many-to-one' : 'many-to-many');
 }
 
 // ---------------------------------------------------------------------------
@@ -984,9 +924,7 @@ function mergeRelationshipTests(
   const seen = new Set<string>();
   const merged: RelationshipTest[] = [];
   for (const test of [...primary, ...secondary]) {
-    const key = [test.fromModel, test.fromColumn, test.toModel, test.toColumn]
-      .map(normaliseName)
-      .join('\0');
+    const key = relationshipIdentity(test, normaliseName);
     if (!seen.has(key)) {
       seen.add(key);
       merged.push(test);

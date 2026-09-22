@@ -1,3 +1,4 @@
+import type { ColumnPair } from './relationships';
 /**
  * Types for cross-stage discrepancy reports.
  *
@@ -59,6 +60,7 @@ export interface RelationshipDiscrepancy {
   fromColumn: string;
   toModel: string;
   toColumn: string;
+  columnPairs?: ColumnPair[];
   status: 'matched' | 'extra' | 'missing' | 'cardinality-mismatch';
   sourceCardinality?: Cardinality;
   targetCardinality?: Cardinality;

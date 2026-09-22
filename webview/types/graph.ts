@@ -1,3 +1,4 @@
+import type { ColumnPair } from '../../src/types/relationships';
 /**
  * Types for React Flow graph nodes and edges.
  *
@@ -123,6 +124,7 @@ export type FkEdgeData = {
   fromColumn: string;
   toModel: string;
   toColumn: string;
+  columnPairs?: ColumnPair[];
   cardinality: Cardinality;
   /** Stage of the owning domain canvas — drives CSS colour class. */
   stage?: Stage;

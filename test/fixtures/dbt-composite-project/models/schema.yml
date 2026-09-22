@@ -1,0 +1,20 @@
+version: 2
+models:
+  - name: child
+    columns:
+      - name: Child A
+        data_type: INTEGER
+      - name: b
+        data_type: INTEGER
+    data_tests:
+      - erd_relationship_tuple:
+          arguments:
+            from_columns: [Child A, b]
+            to: ref('parent')
+            to_columns: [x, y]
+  - name: parent
+    columns:
+      - name: x
+        data_type: INTEGER
+      - name: y
+        data_type: INTEGER

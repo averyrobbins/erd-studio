@@ -1,3 +1,4 @@
+import { relationshipColumnLabel, relationshipIdentity } from '../../../src/types/relationships';
 /**
  * DetailPanel — floating detail view for the selected model.
  *
@@ -192,6 +193,7 @@ export function DetailPanel() {
           fromColumn: rel.fromColumn,
           toModel: rel.toModel,
           toColumn: rel.toColumn,
+          ...(rel.columnPairs ? { columnPairs: rel.columnPairs } : {}),
         },
       });
     },
@@ -206,6 +208,7 @@ export function DetailPanel() {
         fromColumn: rel.fromColumn,
         toModel: rel.toModel,
         toColumn: rel.toColumn,
+        ...(rel.columnPairs ? { columnPairs: rel.columnPairs } : {}),
         cardinality: rel.cardinality,
       };
       openEdgeContextMenu(x, y, edgeData);
@@ -438,7 +441,7 @@ export function DetailPanel() {
             {/* Outgoing: this model references others */}
             {outgoing.map((rel) => (
               <div
-                key={`out-${rel.fromColumn}-${rel.toModel}-${rel.toColumn}`}
+                key={`out-${relationshipColumnLabel(rel, 'from')}-${rel.toModel}-${relationshipColumnLabel(rel, 'to')}`}
                 className="detail-panel__relationship detail-panel__relationship--clickable"
                 onClick={(e) => handleRelationshipClick(e.clientX, e.clientY, rel)}
                 role="button"
@@ -456,12 +459,12 @@ export function DetailPanel() {
                   →
                 </span>
                 <span className="detail-panel__rel-columns">
-                  <span className="detail-panel__rel-local" title={rel.fromColumn}>
-                    {rel.fromColumn}
+                  <span className="detail-panel__rel-local" title={relationshipColumnLabel(rel, 'from')}>
+                    {relationshipColumnLabel(rel, 'from')}
                   </span>
                   <span className="detail-panel__rel-arrow">→</span>
-                  <span className="detail-panel__rel-target" title={`${rel.toModel}.${rel.toColumn}`}>
-                    {rel.toModel}.{rel.toColumn}
+                  <span className="detail-panel__rel-target" title={`${rel.toModel}.${relationshipColumnLabel(rel, 'to')}`}>
+                    {rel.toModel}.{relationshipColumnLabel(rel, 'to')}
                   </span>
                 </span>
                 <span className="detail-panel__rel-cardinality">
@@ -485,7 +488,7 @@ export function DetailPanel() {
             {/* Incoming: others reference this model */}
             {incoming.map((rel) => (
               <div
-                key={`in-${rel.fromModel}-${rel.fromColumn}-${rel.toColumn}`}
+                key={relationshipIdentity(rel)}
                 className="detail-panel__relationship detail-panel__relationship--clickable"
                 onClick={(e) => handleRelationshipClick(e.clientX, e.clientY, rel)}
                 role="button"
@@ -503,12 +506,12 @@ export function DetailPanel() {
                   ←
                 </span>
                 <span className="detail-panel__rel-columns">
-                  <span className="detail-panel__rel-target" title={`${rel.fromModel}.${rel.fromColumn}`}>
-                    {rel.fromModel}.{rel.fromColumn}
+                  <span className="detail-panel__rel-target" title={`${rel.fromModel}.${relationshipColumnLabel(rel, 'from')}`}>
+                    {rel.fromModel}.{relationshipColumnLabel(rel, 'from')}
                   </span>
                   <span className="detail-panel__rel-arrow">→</span>
-                  <span className="detail-panel__rel-local" title={rel.toColumn}>
-                    {rel.toColumn}
+                  <span className="detail-panel__rel-local" title={relationshipColumnLabel(rel, 'to')}>
+                    {relationshipColumnLabel(rel, 'to')}
                   </span>
                 </span>
                 <span className="detail-panel__rel-cardinality">

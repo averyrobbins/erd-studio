@@ -1,3 +1,4 @@
+import { relationshipEdgeId, relationshipIdentity } from '../../src/types/relationships';
 /**
  * Graph transformer — converts a DisplayDomain into React Flow nodes and edges.
  *
@@ -263,7 +264,7 @@ export function transformDomain(
   if (options?.discrepancyReport) {
     for (const rd of options.discrepancyReport.relationships) {
       if (rd.status !== 'matched') {
-        const key = `${rd.fromModel}|${rd.fromColumn}|${rd.toModel}|${rd.toColumn}`;
+        const key = relationshipIdentity(rd);
         relDiscrepancyMap.set(key, rd.status);
       }
     }
@@ -282,11 +283,11 @@ export function transformDomain(
         ? { sourceSide: 'top' as Side, targetSide: 'right' as Side }
         : pickHandleSides(rectOf(rel.fromModel), rectOf(rel.toModel));
 
-      const relKey = `${rel.fromModel}|${rel.fromColumn}|${rel.toModel}|${rel.toColumn}`;
+      const relKey = relationshipIdentity(rel);
       const discStatus = relDiscrepancyMap.get(relKey);
 
       return {
-        id: `fk-${rel.fromModel}-${rel.fromColumn}-${rel.toModel}-${rel.toColumn}`,
+        id: relationshipEdgeId(rel),
         type: 'fk' as const,
         source: rel.fromModel,
         target: rel.toModel,
@@ -297,6 +298,7 @@ export function transformDomain(
           fromColumn: rel.fromColumn,
           toModel: rel.toModel,
           toColumn: rel.toColumn,
+          ...(rel.columnPairs ? { columnPairs: rel.columnPairs } : {}),
           cardinality: rel.cardinality,
           stage,
           ...(readOnly ? { readOnly: true } : {}),
@@ -317,7 +319,7 @@ export function transformDomain(
           ? { sourceSide: 'top' as Side, targetSide: 'right' as Side }
           : pickHandleSides(rectOf(rd.fromModel), rectOf(rd.toModel));
         edges.push({
-          id: `ghost-fk-${rd.fromModel}-${rd.fromColumn}-${rd.toModel}-${rd.toColumn}`,
+          id: `ghost-${relationshipEdgeId(rd)}`,
           type: 'fk' as const,
           source: rd.fromModel,
           target: rd.toModel,
@@ -328,6 +330,7 @@ export function transformDomain(
             fromColumn: rd.fromColumn,
             toModel: rd.toModel,
             toColumn: rd.toColumn,
+            ...(rd.columnPairs ? { columnPairs: rd.columnPairs } : {}),
             cardinality: rd.sourceCardinality ?? rd.targetCardinality ?? 'many-to-one',
             stage,
             discrepancyStatus: 'missing',

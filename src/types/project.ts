@@ -1,3 +1,4 @@
+import type { ColumnPair } from './relationships';
 /** Versioned, credential-free interchange format for native SQLMesh projects. */
 import type { IdentifierFolding } from './naming';
 
@@ -38,6 +39,7 @@ export interface ProjectRelationship {
   fromColumn: string;
   toId: string;
   toColumn: string;
+  columnPairs?: ColumnPair[];
   audit: string;
 }
 

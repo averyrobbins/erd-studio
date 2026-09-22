@@ -172,11 +172,25 @@ Relationships are stored **only** in the domain JSON, never in the YAML.
 | `toColumn` | string | Yes | Referenced PK column on the to model. |
 | `cardinality` | string | Yes | One of `"many-to-one"`, `"one-to-one"`, `"one-to-many"`, `"many-to-many"`. |
 
-**Identity key:** the composite `(fromModel, fromColumn, toModel, toColumn)` must be unique within the domain.
+
+For a composite FK, add `columnPairs` containing the **complete ordered tuple**, with at least two
+`{ "fromColumn": "product_id", "toColumn": "product_id" }` pairs. The required
+`fromColumn` / `toColumn` fields equal the first pair; they are display anchors, not an
+additional relationship. Each side must use distinct nonempty column names. Without
+`columnPairs`, the existing single-column format is unchanged. Use the updated extension
+when editing domains containing tuples; older editors do not understand them.
+
+Identity includes both models and every ordered pair. Tuples sharing an anchor are distinct.
+The editor renders one edge labelled with its column count, and edits, renames, deletes,
+comparison and sync operate on the whole group. Reordering both sides preserves SQL tuple
+membership, but changes the editor's ordered identity. Never combine independent relationship
+tests into a tuple. A side is "one" only when a declared unique key is contained in that
+relationship's own column set; a composite key does not make its individual components unique.
+
 
 **Direction convention:** `fromModel` holds the FK, `toModel` holds the PK.
 
-Entries missing any of the four string endpoints are dropped on read with a console warning; an unrecognised `cardinality` falls back to `many-to-one`.
+Malformed tuples and entries missing any of the four string endpoints are dropped on read with a console warning; an unrecognised `cardinality` falls back to `many-to-one`.
 
 ## View Config (`viewConfig`)
 
@@ -332,7 +346,7 @@ warehouse does not have renders a physical column nothing has verified.
 |-------|-----------|
 | `dataType` | `catalog.json` → declared `data_type:` → the manifest's copy of it → blank |
 | `description` | `.yml` description → manifest description → catalog column `comment` (`persist_docs` writes the dbt description *into* that comment, so it ranks last) |
-| PK/FK/NK, `scdType`, `additiveType` | Carried forward from the logical model — dbt yml does not carry them |
+| PK/FK/NK, `scdType`, `additiveType` | Carried forward from the logical model; FK is also marked for every source component of a declared relationship |
 
 A column typed on only one stage is reported as **`undeclared`**, not as a type
 mismatch; writing `data_type:` into the schema yml, or running
@@ -349,7 +363,7 @@ panel; it is never written to disk.
 **Relationships** are derived from **dbt relationship tests** — the union of those
 declared in `.yml` files and those in the manifest, deduped, never copied from
 logical. Cardinality comes from `unique` / `dbt_utils.unique_combination_of_columns`
-tests merged from the same two sources (no `unique` test = "many" side). Only
+tests merged from the same two sources. Only unique keys contained in the relationship's own column set count; independent edges are never combined into a tuple. The model-level `erd_relationship_tuple` generic test preserves ordered pairs. Only
 relationships between models **within the same domain** appear. `catalog.json`
 holds no constraint or foreign-key information, so it contributes no edges.
 
@@ -359,7 +373,7 @@ holds no constraint or foreign-key information, so it contributes no edges.
 2. `layer` must match an `id` in `layers.json`.
 3. Every entry in `logical.models` must be a string. Mixed string/object arrays are rejected.
 4. Each referenced model should have a `logical-models/{name}.yml`; a missing file renders as a placeholder with a warning.
-5. Relationship identity `(fromModel, fromColumn, toModel, toColumn)` must be unique, and both models should be in `logical.models`.
+5. Relationship identity (both models plus the complete ordered column pairs) must be unique, and both models should be in `logical.models`.
 6. `viewConfig` must be at the root of the document.
 
 ## Complete Example

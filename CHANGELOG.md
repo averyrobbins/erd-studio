@@ -10,6 +10,9 @@ heading — `## Unreleased — 1.0.0` — and the workflow releases exactly that
 
 ## Unreleased
 
+- Support composite foreign keys as ordered column-pair groups across the logical editor, Physical views, comparisons, sync plans and MCP. Existing single-column relationships remain compatible.
+- Add executable SQLMesh `erd_relationship_tuple` and dbt generic tuple tests, with partial-null child tuples excluded; bundle templates for assisted source sync. Separate single-column tests no longer imply composite uniqueness/cardinality.
+
 ### Fixed
 
 - **SQLMesh observed aliases:** warehouse-only columns that collide with source

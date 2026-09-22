@@ -97,22 +97,25 @@ supersede earlier draft limitations.
 | Automated sync | Opt-in debounced source metadata refresh; serialized exports, last-good snapshot on failure, open diagram/comparison updates |
 | Warehouse introspection | Explicit read-only DuckDB and PostgreSQL inspection, environment-aware relations, separate source/observed types, restricted-role acceptance |
 | Domain execution | Reviewed exact native selections launch SQLMesh's interactive planner; state initialization and dependency/backfill scope are disclosed; no auto-apply |
+| Composite relationships | Ordered column pairs, one labelled edge, atomic edits/sync, executable tuple audit/test templates and tuple-aware cardinality |
 | AI/MCP | Native harness guidance and inert MCP inspection, including pending bindings; existing dbt behavior retained |
 
-Validation: **1,713 JavaScript tests**, **31 Python tests** including five real
-PostgreSQL checks, **13 MCP checks**, **11 VS Code host checks**, TypeScript and
-production VSIX packaging. Installed-editor acceptance includes three real Claude
-source edits/creation, native undo, automatic refresh and warehouse inspection.
-Source creation/refresh and read-only inspection preserved DuckDB bytes.
+Latest local validation: **1,772 JavaScript tests**, **28 Python passed / five
+PostgreSQL skipped**, one real dbt/DuckDB integration test, **16 MCP checks**,
+**12 VS Code host checks**, TypeScript and production VSIX. Earlier PostgreSQL
+acceptance remains historical evidence; it was not rerun in this pass.
 
-Remaining scope is explicit: true composite foreign keys need ordered column-pair
-groups in the shared editor and a tuple-aware audit; separate column checks are not
-equivalent. Native source deletion requires consumer/history review; Python/generated,
-seed and external source editing remain manual. Other warehouse engines, custom
-loaders, multiple gateways, Windows/macOS, cloud TLS/authentication and production
-scale are unverified. Metadata sync never implies deployment or successful audits.
-The independent review follow-up corrected five issues and passes 1,745 JS tests,
-26 Python tests (five PostgreSQL cases skipped), 13 MCP checks and 11 host checks.
-An observed-only column can still share a displayed logical alias with a bound
-source column; write paths reject that collision. The next step is to distinguish
-those rows visibly and pilot the integration against a representative native project.
+The three follow-ups are complete: conflicting warehouse-only aliases have distinct
+native labels; the sibling `erd-studio-sqlmesh-pilot` demonstrates the complete core
+workflow on ten models / 300 order lines; and true composite FKs now retain ordered
+column pairs through both integrations, the editor, comparisons, sync and MCP.
+SQLMesh `erd_relationship_tuple` audits and dbt generic tests reject invalid tuple
+combinations that independent column checks would accept. Null handling is MATCH
+SIMPLE; declared uniqueness is applied to the tuple itself. The installed pilot's
+final source, logical and deployed views match. See [acceptance details](.planning/sqlmesh-pilot-composite-results.md).
+
+Remaining scope: native source deletion requires consumer/history review;
+Python/generated, seed and external source editing remain manual. Other warehouse
+engines, custom loaders, multiple gateways, Windows/macOS, cloud TLS/authentication
+and production scale are unverified. Composite execution was tested on DuckDB for
+both engines. Metadata sync never implies deployment or successful audits.

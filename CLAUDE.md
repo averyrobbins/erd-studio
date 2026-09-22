@@ -234,7 +234,7 @@ Discrepancy statuses for models/columns/relationships: `matched`, `extra`, `miss
 AI coding harness files (installed via `erdStudio.installCodingHarness`) embed a version marker to track staleness:
 
 ```
-<!-- erd-studio-harness: 17 -->
+<!-- erd-studio-harness: 18 -->
 ```
 
 **Key components in `src/services/harnessService.ts`:**

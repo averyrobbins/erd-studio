@@ -1,0 +1,7 @@
+erd_tuple_pilot:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: pilot.duckdb
+      threads: 1

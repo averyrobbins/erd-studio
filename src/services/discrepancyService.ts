@@ -1,3 +1,4 @@
+import { relationshipPairs } from '../types/relationships';
 /**
  * Discrepancy service — compares two DisplayDomains to produce a cross-stage
  * discrepancy report.
@@ -337,7 +338,7 @@ function compareRelationships(
     for (const model of models) result.set(normaliseName(model.name), [...model.columns]);
     const declared = new Map([...result].map(([model, columns]) => [model, [...columns]]));
     for (const rel of rels) {
-      for (const [model, name] of [[rel.fromModel, rel.fromColumn], [rel.toModel, rel.toColumn]]) {
+      for (const [model, name] of relationshipPairs(rel).flatMap(p => [[rel.fromModel, p.fromColumn], [rel.toModel, p.toColumn]])) {
         const key = normaliseName(model);
         const columns = result.get(key) ?? [];
         // Relationship declarations can name columns absent from metadata.
@@ -363,7 +364,7 @@ function compareRelationships(
     return target ? [key, 'paired', target.name] : [key, side, name];
   };
   const relKey = (r: DisplayRelationship, side: 'source' | 'target') => JSON.stringify([
-    endpoint(r.fromModel, r.fromColumn, side), endpoint(r.toModel, r.toColumn, side),
+    ...relationshipPairs(r).map(p => [endpoint(r.fromModel, p.fromColumn, side), endpoint(r.toModel, p.toColumn, side)]),
   ]);
   const targetMap = new Map<string, DisplayRelationship[]>();
   for (const rel of targetRels) {
@@ -383,6 +384,7 @@ function compareRelationships(
         fromColumn: rel.fromColumn,
         toModel: rel.toModel,
         toColumn: rel.toColumn,
+        ...(rel.columnPairs ? { columnPairs: rel.columnPairs } : {}),
         status: 'extra',
         sourceCardinality: rel.cardinality,
       });
@@ -392,6 +394,7 @@ function compareRelationships(
         fromColumn: rel.fromColumn,
         toModel: rel.toModel,
         toColumn: rel.toColumn,
+        ...(rel.columnPairs ? { columnPairs: rel.columnPairs } : {}),
         status: 'cardinality-mismatch',
         sourceCardinality: rel.cardinality,
         targetCardinality: targetRel.cardinality,
@@ -402,6 +405,7 @@ function compareRelationships(
         fromColumn: rel.fromColumn,
         toModel: rel.toModel,
         toColumn: rel.toColumn,
+        ...(rel.columnPairs ? { columnPairs: rel.columnPairs } : {}),
         status: 'matched',
       });
     }
@@ -415,6 +419,7 @@ function compareRelationships(
         fromColumn: rel.fromColumn,
         toModel: rel.toModel,
         toColumn: rel.toColumn,
+        ...(rel.columnPairs ? { columnPairs: rel.columnPairs } : {}),
         status: 'missing',
         targetCardinality: rel.cardinality,
       });

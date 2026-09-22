@@ -1,3 +1,4 @@
+import { relationshipColumnLabel, relationshipIdentity } from '../../../src/types/relationships';
 /**
  * DiscrepancyPanel — collapsible summary of cross-stage differences.
  *
@@ -137,7 +138,7 @@ function RelationshipEntry({ rel, sourceStage, targetStage, onNavigate }: Relati
       >
         <span className={`disc-panel__model-status disc-panel__model-status--${statusClass}`} />
         <span className="disc-panel__model-name">
-          {rel.fromModel}.{rel.fromColumn} &rarr; {rel.toModel}.{rel.toColumn}
+          {rel.fromModel}.{relationshipColumnLabel(rel, 'from')} &rarr; {rel.toModel}.{relationshipColumnLabel(rel, 'to')}
         </span>
         <span className="disc-panel__model-label">{relStatusLabel}</span>
       </button>
@@ -339,7 +340,7 @@ export function DiscrepancyPanel() {
             <div className="disc-panel__section-label">Relationships</div>
             {relsWithIssues.map((r) => (
               <RelationshipEntry
-                key={`${r.fromModel}.${r.fromColumn}-${r.toModel}.${r.toColumn}`}
+                key={relationshipIdentity(r)}
                 rel={r}
                 sourceStage={sourceStage}
                 targetStage={targetStage}

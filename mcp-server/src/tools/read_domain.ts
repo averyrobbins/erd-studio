@@ -88,6 +88,7 @@ export const read_domain = {
                 from_column: r.fromColumn,
                 to_model: r.toModel,
                 to_column: r.toColumn,
+                ...(r.columnPairs ? { column_pairs: r.columnPairs.map(p => ({ from_column: p.fromColumn, to_column: p.toColumn })) } : {}),
                 cardinality: r.cardinality,
               })),
               view_config: unified.viewConfig ?? {},

@@ -200,6 +200,24 @@ export async function run(): Promise<void> {
       }
       checks.push('opt-in automatic metadata refresh observes source saves without a manual command');
 
+      const beforeTuple = fs.readFileSync(active.doc.uri.fsPath, 'utf8');
+      const tuple = { fromModel: 'fct_order', fromColumn: 'customer_id', toModel: 'dim_customer', toColumn: 'customer_id',
+        cardinality: 'many-to-one', columnPairs: [
+          { fromColumn: 'customer_id', toColumn: 'customer_id' }, { fromColumn: 'amount', toColumn: 'name' },
+        ] };
+      await active.send({ type: 'addRelationship', payload: tuple }, 'domainLoaded');
+      assert.deepEqual(JSON.parse(fs.readFileSync(active.doc.uri.fsPath, 'utf8')).logical.relationships.at(-1), tuple);
+      await active.send({ type: 'updateColumn', payload: { modelName: 'fct_order', oldColumnName: 'amount',
+        column: { name: 'total', dataType: 'TEXT' } } }, 'domainLoaded');
+      assert.equal(JSON.parse(fs.readFileSync(active.doc.uri.fsPath, 'utf8')).logical.relationships.at(-1).columnPairs[1].fromColumn, 'total');
+      await vscode.window.showTextDocument(active.doc);
+      await active.send({ type: 'undo' }, 'domainLoaded');
+      assert.deepEqual(JSON.parse(fs.readFileSync(active.doc.uri.fsPath, 'utf8')).logical.relationships.at(-1), tuple);
+      assert.match(fs.readFileSync(modelFile, 'utf8'), /name: amount/);
+      await active.send({ type: 'undo' }, 'domainLoaded');
+      assert.equal(fs.readFileSync(active.doc.uri.fsPath, 'utf8'), beforeTuple);
+      checks.push('tuple creation and secondary-column rename use native grouped undo and preserve single edges');
+
       fs.rmSync(path.join(root, '.erd-studio/sqlmesh.json'));
       const failedSwitch = await active.send({ type: 'switchStage', payload: { stage: 'physical' } }, 'error');
       assert.match(failedSwitch.payload.message, /export|metadata/i);

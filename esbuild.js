@@ -35,6 +35,12 @@ if (!fs.existsSync(distDir)) {
 }
 
 fs.copyFileSync(path.join(__dirname, 'integrations/sqlmesh/export.py'), path.join(distDir, 'sqlmesh_export.py'));
+for (const [source, target] of [
+  ['integrations/sqlmesh/audits/erd_relationship.sql', 'sqlmesh_erd_relationship.sql'],
+  ['integrations/sqlmesh/audits/erd_relationship_tuple.sql', 'sqlmesh_erd_relationship_tuple.sql'],
+  ['integrations/dbt/tests/generic/erd_relationship_tuple.sql', 'dbt_erd_relationship_tuple.sql'],
+]) fs.copyFileSync(path.join(__dirname, source), path.join(distDir, target));
+
 
 // Read ELK Web Worker code for blob URL injection into the webview bundle.
 // VS Code webviews cannot use importScripts() or load workers from URLs,

@@ -62,6 +62,7 @@ export const list_manifest_models = {
                     from_column: t.fromColumn,
                     to_model: t.toModel,
                     to_column: t.toColumn,
+                    ...(t.columnPairs ? { column_pairs: t.columnPairs.map(p => ({ from_column: p.fromColumn, to_column: p.toColumn })) } : {}),
                   })),
               })),
             },

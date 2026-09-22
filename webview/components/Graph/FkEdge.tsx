@@ -1,3 +1,4 @@
+import { relationshipColumnLabel } from '../../../src/types/relationships';
 /**
  * FkEdge — custom React Flow edge for displaying FK relationships.
  *
@@ -160,6 +161,7 @@ function FkEdgeComponent({
           fromColumn: data.fromColumn,
           toModel: data.toModel,
           toColumn: data.toColumn,
+          ...(data.columnPairs ? { columnPairs: data.columnPairs } : {}),
           cardinality: swapCardinality(data.cardinality),
         },
       });
@@ -301,6 +303,11 @@ function FkEdgeComponent({
         style={{ pointerEvents: 'stroke' }}
       />
       <EdgeLabelRenderer>
+        {data.columnPairs && <span className={`fk-edge__label ${labelColorClass} fk-edge__tuple-label`}
+          style={{ transform: `translate(-50%, -50%) translate(${midX}px, ${midY - 18}px)` }}
+          title={`${data.fromModel}.${relationshipColumnLabel(data, 'from')} → ${data.toModel}.${relationshipColumnLabel(data, 'to')}`}>
+          {data.columnPairs.length} columns
+        </span>}
         <span
           className={`fk-edge__label ${labelColorClass}${srcLabelClass}${dimmed ? ' fk-edge__label--dimmed' : ''}`}
           style={{

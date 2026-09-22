@@ -178,3 +178,11 @@
   background: var(--button-bg);
   color: var(--button-fg);
 }
+
+.fk-edge__tuple-label {
+  font-size: 10px;
+  white-space: nowrap;
+  background: var(--vscode-editor-background);
+  padding: 2px 4px;
+  pointer-events: auto;
+}

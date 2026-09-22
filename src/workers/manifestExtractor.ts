@@ -1,3 +1,4 @@
+import { validRelationshipColumns, type ColumnPair } from '../types/relationships';
 /**
  * Pure extraction functions for dbt manifest.json nodes.
  *
@@ -223,8 +224,16 @@ function extractRelationshipTest(
     return null;
   }
 
-  const fromColumn = kwargs.column_name;
-  const toColumn = kwargs.field;
+  const tuple = testMetadata.name === 'erd_relationship_tuple';
+  let columnPairs: ColumnPair[] | undefined;
+  if (tuple) {
+    const from = kwargs.from_columns, to = kwargs.to_columns;
+    if (!Array.isArray(from) || !Array.isArray(to) || from.length !== to.length || from.length < 2) return null;
+    columnPairs = from.map((c, i) => ({ fromColumn: c, toColumn: to[i] }));
+    if (!validRelationshipColumns({ ...columnPairs[0], columnPairs })) return null;
+  }
+  const fromColumn = columnPairs?.[0].fromColumn ?? kwargs.column_name;
+  const toColumn = columnPairs?.[0].toColumn ?? kwargs.field;
   const toRef = kwargs.to;
 
   if (
@@ -247,6 +256,8 @@ function extractRelationshipTest(
 
   if (attachedNode && attachedNode.startsWith('model.')) {
     fromModel = resolveModelNameFromNodeId(attachedNode, nodes);
+  } else if (typeof kwargs.model === 'string' && parseRefModelName(kwargs.model)) {
+    fromModel = parseRefModelName(kwargs.model) ?? undefined;
   } else {
     const dependsOn = node.depends_on as { nodes?: string[] } | undefined;
     const nodeRefs = dependsOn?.nodes ?? [];
@@ -266,7 +277,7 @@ function extractRelationshipTest(
     return null;
   }
 
-  return { fromModel, fromColumn, toModel, toColumn };
+  return { fromModel, fromColumn, toModel, toColumn, ...(columnPairs ? { columnPairs } : {}) };
 }
 
 function extractUniqueTest(

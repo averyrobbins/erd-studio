@@ -1060,7 +1060,7 @@ describe('DomainService', () => {
       expect(result[1].cardinality).toBe('many-to-one');
     });
 
-    it('uses composite unique groups for cardinality derivation', () => {
+    it('does not infer tuple uniqueness from independent single-column relationships', () => {
       // dim_product has a composite unique on (product_id, region_id)
       // Two relationship tests from fct_orders cover both columns
       const tests: ManifestRelationshipTest[] = [
@@ -1073,11 +1073,10 @@ describe('DomainService', () => {
 
       const result = derivePhysicalRelationships(tests, models, new Map(), compositeGroups);
 
-      // Both toColumns covered by composite unique → to side is "one"
-      // fromColumns have no unique → from side is "many"
+      // A composite key does not make either component unique by itself.
       expect(result).toHaveLength(2);
-      expect(result[0].cardinality).toBe('many-to-one');
-      expect(result[1].cardinality).toBe('many-to-one');
+      expect(result[0].cardinality).toBe('many-to-many');
+      expect(result[1].cardinality).toBe('many-to-many');
     });
 
     it('composite unique does not apply when not all columns are covered', () => {

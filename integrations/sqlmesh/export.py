@@ -309,29 +309,40 @@ def export_project(root: Path, semantic: Path, gateway: str | None, config: str 
                         keys.extend([[name] for name in names] if audit_name == "unique_values" else [names])
                     else:
                         diagnostics.append(f"Unresolved uniqueness arguments on {model_id}")
-                elif audit_name == "erd_relationship":
-                    child, parent, to = kwargs.get("column"), kwargs.get("field"), kwargs.get("to")
-                    if isinstance(child, exp.Column) and isinstance(parent, exp.Column) and isinstance(to, (exp.Table, exp.Column)):
+                elif audit_name in ("erd_relationship", "erd_relationship_tuple"):
+                    to = kwargs.get("to")
+                    if audit_name == "erd_relationship_tuple":
+                        raw = kwargs.get("pairs")
+                        pairs = list(raw.expressions) if isinstance(raw, (exp.Tuple, exp.Array)) else []
+                        valid = len(pairs) >= 2 and all(isinstance(p, (exp.Tuple, exp.Array)) and len(p.expressions) == 2
+                            and all(isinstance(c, exp.Column) and not c.table for c in p.expressions) for p in pairs)
+                        columns = [{"fromColumn": normalize_identifiers(p.expressions[0].copy(), dialect=model.dialect).name,
+                                    "toColumn": normalize_identifiers(p.expressions[1].copy(), dialect=model.dialect).name}
+                                   for p in pairs] if valid else []
+                        valid = valid and len({p["fromColumn"] for p in columns}) == len(columns) and len({p["toColumn"] for p in columns}) == len(columns)
+                    else:
+                        child, parent = kwargs.get("column"), kwargs.get("field")
+                        valid = isinstance(child, exp.Column) and isinstance(parent, exp.Column)
+                        columns = [{"fromColumn": normalize_identifiers(child.copy(), dialect=model.dialect).name,
+                                    "toColumn": normalize_identifiers(parent.copy(), dialect=model.dialect).name}] if valid else []
+                    if valid and isinstance(to, (exp.Table, exp.Column)):
                         target = normalize_model_name(to.sql(dialect=model.dialect), default_catalog=model.default_catalog, dialect=model.dialect)
                         if target in aliases:
-                            relationships.append({"fromId": model_id,
-                                                  "fromColumn": normalize_identifiers(child.copy(), dialect=model.dialect).name,
-                                                  "toId": target,
-                                                  "toColumn": normalize_identifiers(parent.copy(), dialect=model.dialect).name,
-                                                  "audit": audit_name})
+                            relationships.append({"fromId": model_id, "toId": target, **columns[0],
+                                                  **({"columnPairs": columns} if len(columns) > 1 else {}), "audit": audit_name})
                             # SQLMesh builds the DAG from the query, not from audits. An audit whose
                             # parent is not a dependency is rendered against the parent's virtual
                             # name and can run before that table exists (a fresh deployment fails)
                             # or against prod's view from a dev environment. The edge is still the
                             # declared intent; the deployment hazard is reported alongside it.
                             if target not in model.depends_on:
-                                diagnostics.append(f"erd_relationship on {model_id} targets {target}, which is not a dependency of the model; "
+                                diagnostics.append(f"{audit_name} on {model_id} targets {target}, which is not a dependency of the model; "
                                                    f"add depends_on ({to.sql(dialect=model.dialect)}) to the MODEL so the audit resolves "
                                                    "to the environment's own table and runs after it exists")
                         else:
                             diagnostics.append(f"Unresolved relationship target {target} on {model_id}")
                     else:
-                        diagnostics.append(f"Unresolved erd_relationship arguments on {model_id}")
+                        diagnostics.append(f"Unresolved {audit_name} arguments on {model_id}")
                 elif audit_name not in ("not_null", "accepted_values"):
                     diagnostics.append(f"Audit {audit_name} on {model_id} is not interpreted as relationship/uniqueness evidence")
             models.append({
@@ -375,8 +386,9 @@ def export_project(root: Path, semantic: Path, gateway: str | None, config: str 
             model["uniqueKeys"] = valid_keys
         valid_relationships = []
         for relationship in relationships:
-            if (relationship["fromColumn"] in columns_by_id[relationship["fromId"]]
-                    and relationship["toColumn"] in columns_by_id[relationship["toId"]]):
+            if all(p["fromColumn"] in columns_by_id[relationship["fromId"]]
+                   and p["toColumn"] in columns_by_id[relationship["toId"]]
+                   for p in relationship.get("columnPairs", [relationship])):
                 if relationship not in valid_relationships:
                     valid_relationships.append(relationship)
             else:

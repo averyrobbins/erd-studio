@@ -1,3 +1,4 @@
+import type { ColumnPair } from './relationships';
 /**
  * Types for the sync reconciliation plan.
  *
@@ -36,8 +37,9 @@ export function relationshipKey(
   fromColumn: string,
   toModel: string,
   toColumn: string,
+  columnPairs?: ColumnPair[],
 ): string {
-  return `rel:${fromModel}:${fromColumn}:${toModel}:${toColumn}`;
+  return columnPairs ? `rel-tuple:${JSON.stringify([fromModel, toModel, columnPairs.map(p => [p.fromColumn, p.toColumn])])}` : `rel:${fromModel}:${fromColumn}:${toModel}:${toColumn}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +106,7 @@ export interface RelationshipResolution {
   fromColumn: string;
   toModel: string;
   toColumn: string;
+  columnPairs?: ColumnPair[];
   discrepancyStatus: 'extra' | 'missing' | 'cardinality-mismatch';
   groundTruth: GroundTruth;
   action: RelationshipAction;
@@ -150,6 +153,8 @@ export interface SyncPlan {
   relationships: RelationshipResolution[];
   /** True if any action targets the physical side (dbt files), meaning dbt compile is needed after. */
   requiresCompile: boolean;
+  /** Installed generic-test source; copy to tests/generic when a tuple test is needed. */
+  relationshipTemplates?: { tuple: string };
 }
 
 // ---------------------------------------------------------------------------

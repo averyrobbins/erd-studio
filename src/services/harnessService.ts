@@ -25,7 +25,7 @@ import * as path from 'path';
  * differs is offered an update, so a bump for unrelated work prompts every
  * dbt user to rewrite files that would come out byte-identical.
  */
-export const HARNESS_VERSION = '17';
+export const HARNESS_VERSION = '18';
 
 /**
  * Version of the native SQLMesh harness content, independent of
@@ -34,7 +34,7 @@ export const HARNESS_VERSION = '17';
  * `SQLMESH_SYNC_INSTRUCTIONS` change. A file's provider marker decides which
  * version it is compared against.
  */
-export const SQLMESH_HARNESS_VERSION = '5';
+export const SQLMESH_HARNESS_VERSION = '6';
 
 /** The harness version the given provider's generated files carry. */
 export function harnessVersionFor(provider: 'dbt' | 'sqlmesh'): string {
@@ -386,6 +386,21 @@ Every entry in "in source but not in YAML" must have a specific reason. A class-
 | \`toColumn\` | Yes | PK column name |
 | \`cardinality\` | Yes | \`many-to-one\`, \`one-to-one\`, \`one-to-many\`, or \`many-to-many\` |
 
+
+For a composite FK, add \`columnPairs\` containing the **complete ordered tuple**, with at least two
+\`{ "fromColumn": "product_id", "toColumn": "product_id" }\` pairs. The required
+\`fromColumn\` / \`toColumn\` fields equal the first pair; they are display anchors, not an
+additional relationship. Each side must use distinct nonempty column names. Without
+\`columnPairs\`, the existing single-column format is unchanged. Use the updated extension
+when editing domains containing tuples; older editors do not understand them.
+
+Identity includes both models and every ordered pair. Tuples sharing an anchor are distinct.
+The editor renders one edge labelled with its column count, and edits, renames, deletes,
+comparison and sync operate on the whole group. Reordering both sides preserves SQL tuple
+membership, but changes the editor's ordered identity. Never combine independent relationship
+tests into a tuple. A side is "one" only when a declared unique key is contained in that
+relationship's own column set; a composite key does not make its individual components unique.
+
 **Direction:** \`fromModel\` is always the FK side, \`toModel\` is the PK side. FK column names should match the PK column name of the referenced table.
 
 ---
@@ -433,9 +448,9 @@ A model known **only** by the file that defines it renders as a real node with *
 | Yes | No | \`one-to-many\` |
 | No | No | \`many-to-many\` |
 
-For composite keys, \`dbt_utils.unique_combination_of_columns\` is recognized when **all** columns in the group are covered by relationship tests between the same model pair.
+For composite keys, \`dbt_utils.unique_combination_of_columns\` is recognized when **all** key columns belong to this one relationship tuple. Independent single-column tests do not count.
 
-Recognized test types: \`relationships\`, \`relationships_where\`, and any test whose name starts with \`relationships\`.
+Recognized test types: model-level \`erd_relationship_tuple\`, \`relationships\`, \`relationships_where\`, and any test whose name starts with \`relationships\`.
 
 ### Implementing Logical → Physical
 
@@ -562,6 +577,16 @@ models:
               to: ref('dim_customer')
               field: customer_id
 \`\`\`
+
+For a resolution with \`columnPairs\`, copy \`relationshipTemplates.tuple\` from the
+reviewed plan into \`tests/generic/erd_relationship_tuple.sql\` if absent. Add one
+model-level \`erd_relationship_tuple\` test with \`from_columns\`, \`to: ref('parent')\`
+and \`to_columns\` arrays in the same pair order. Modern dbt nests these under
+\`arguments:\`; older dbt accepts flat kwargs. Never emit one single-column test per
+component. The test skips a child tuple if any component is NULL (MATCH SIMPLE);
+add separate not_null tests when required. Preserve the full tuple when adding,
+editing or removing a logical relationship. Apply uniqueness only to a key contained
+in the selected tuple. Independent FK tests do not prove tuple membership.
 
 ## Execution Steps
 
@@ -807,8 +832,9 @@ when explicit bindings exist.
 After changing a binding or renaming a bound logical model, refresh the export.
 Preserve qualified model identities and the case of exported column names.
 
-Only the erd_relationship(column := customer_id, to := analytics.dim_customer,
-field := customer_id) audit convention supplies FK edges in this draft. The parent
+The erd_relationship(column := customer_id, to := analytics.dim_customer,
+field := customer_id) and erd_relationship_tuple(pairs := ((product_id, product_id),
+(region_id, region_id)), to := analytics.dim_product_region) audit conventions supply FK edges. The parent
 must be a dependency of the child: add depends_on (analytics.dim_customer) to a
 child MODEL whose query does not select from the parent, or the audit runs before
 the parent exists and a fresh deployment fails. Unfiltered

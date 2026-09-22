@@ -1,3 +1,4 @@
+import { validRelationshipColumns } from '../types/relationships';
 /**
  * YmlParserService — parses dbt schema .yml files to extract model and test
  * metadata directly from source code, and indexes the model / seed / snapshot
@@ -368,7 +369,7 @@ export class YmlParserService {
     }
 
     // Extract model-level tests (unique_combination_of_columns)
-    this.extractModelLevelTests(name, modelNode, compositeUniqueGroups);
+    this.extractModelLevelTests(name, modelNode, compositeUniqueGroups, relationshipTests);
 
     models.set(name, {
       name,
@@ -510,6 +511,7 @@ export class YmlParserService {
     modelName: string,
     modelNode: YAMLMap,
     compositeUniqueGroups: Map<string, string[][]>,
+    relationships: YmlRelationshipTest[],
   ): void {
     // dbt supports both `tests:` and `data_tests:` at model level
     for (const key of TEST_LIST_KEYS) {
@@ -523,6 +525,19 @@ export class YmlParserService {
           continue;
         }
         const testMap = testItem as YAMLMap;
+
+        const tupleNode = testMap.get('erd_relationship_tuple');
+        if (isMap(tupleNode)) {
+          const args = tupleNode.get('arguments');
+          const kwargs = isMap(args) ? args : tupleNode;
+          const from = kwargs.get('from_columns'), to = kwargs.get('to_columns');
+          const toModel = parseRefModelName(this.getString(kwargs, 'to'));
+          if (isSeq(from) && isSeq(to) && from.items.length === to.items.length && from.items.length >= 2 && toModel) {
+            const columnPairs = from.items.map((c, i) => ({ fromColumn: this.resolveScalar(c), toColumn: this.resolveScalar(to.items[i]) }));
+            const columns = { ...columnPairs[0], columnPairs };
+            if (validRelationshipColumns(columns)) relationships.push({ fromModel: modelName, toModel, ...columns });
+          }
+        }
 
         // Check for unique_combination_of_columns (with or without dbt_utils prefix)
         for (const testKey of [

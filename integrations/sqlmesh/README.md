@@ -138,12 +138,32 @@ environment checks prod's parent instead of its own. The exporter reports this
 case as a diagnostic (*"…is not a dependency of the model"*) and still exports
 the edge; fix the model, then refresh. Unfiltered
 `unique_values` audits establish single-column uniqueness for cardinality.
-`unique_combination_of_columns` is exported as grouped metadata; composite FK
-cardinality is deferred. The shared editor stores single-column edges. Two separate
+`unique_combination_of_columns` is exported as grouped metadata and determines cardinality
+only for relationships containing that key. The shared editor preserves ordered tuple groups. Two separate
 column audits do not validate a tuple: parent keys `(1, A)` and `(2, B)` admit an
-invalid child `(1, B)` under separate checks. dbt's current grouped-cardinality
-heuristic does not solve that distinction either. A future tuple audit needs explicit
-ordered column-pair groups across both providers, the editor, comparison and sync.
+invalid child `(1, B)` under separate checks. For tuple membership, copy
+[erd_relationship_tuple.sql](audits/erd_relationship_tuple.sql) into the project's
+`audits/` directory and declare one audit:
+
+```sql
+MODEL (
+  name analytics.fct_order_line,
+  depends_on (analytics.dim_product_region),
+  audits (erd_relationship_tuple(
+    pairs := ((product_id, product_id), (region_id, region_id)),
+    to := analytics.dim_product_region
+  ))
+);
+```
+
+Each pair is `(child_column, parent_column)`; order is preserved, both sides must
+be distinct identifiers, and at least two pairs are required. Any NULL child
+component exempts the tuple (MATCH SIMPLE); add separate `not_null` audits when
+needed. Parent NULL values never mask a non-null orphan. The editor stores the
+complete group in `columnPairs`, draws one labelled edge, and syncs every pair.
+Sync plans supply installed template paths; assisted source edits copy the audit
+only when absent, preserving any project-owned implementation. The corresponding
+[dbt generic test](../dbt/README.md) uses the same tuple and null semantics.
 These are **audit declarations**, not evidence of passing
 audits. Lineage, `grain`, and `references` do not automatically become ERD edges.
 Other custom audits, filtered uniqueness, and unresolved arguments are diagnosed
@@ -259,9 +279,8 @@ The existing dbt `selectors.yml` workflow remains unchanged.
 
 ## Current boundaries
 
-- The core native workflow is close to dbt parity. Remaining gaps are true composite
-  FKs, assisted source deletion, generated-source editing and additional warehouse
-  adapters. Source synthesis still requires an assistant and known business logic,
+- The core native workflow includes true composite FKs. Remaining boundaries are
+  assisted source deletion, generated-source editing and additional warehouse adapters. Source synthesis still requires an assistant and known business logic,
   as with dbt. dbt commands are blocked on the native integration.
 - Model discovery covers SQL, seeds, external, Python/generated and disabled models
   as loaded by SQLMesh. Unknown schemas never become deletion suggestions.

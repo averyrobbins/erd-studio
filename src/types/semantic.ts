@@ -1,3 +1,4 @@
+import type { ColumnPair } from './relationships';
 /**
  * Types for semantic domain JSON files.
  *
@@ -136,13 +137,14 @@ export type Cardinality = 'many-to-one' | 'one-to-one' | 'one-to-many' | 'many-t
 /**
  * An FK relationship between two models in a domain.
  *
- * Identity is the composite key: (fromModel, fromColumn, toModel, toColumn).
+ * Identity includes both models and the complete ordered column pairs.
  */
 export interface Relationship {
   fromModel: string;
   fromColumn: string;
   toModel: string;
   toColumn: string;
+  columnPairs?: ColumnPair[];
   cardinality: Cardinality;
 }
 

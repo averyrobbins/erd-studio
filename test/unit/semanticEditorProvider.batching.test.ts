@@ -525,3 +525,19 @@ describe('dead protocol surface (H35)', () => {
     },
   );
 });
+
+it('generates a dbt source sync plan for a whole tuple sharing an existing anchor', async () => {
+  const { panel } = await openShowcase();
+  const tuple = { ...REL_A, cardinality: 'many-to-one', columnPairs: [
+    { fromColumn: 'task_key', toColumn: 'task_key' }, { fromColumn: 'project_key', toColumn: 'project_key' },
+  ] };
+  await panel._simulateMessage({ type: 'addRelationship', payload: tuple });
+  await panel._simulateMessage({ type: 'toggleDiscrepancy', payload: { enabled: true, compareAgainst: 'physical' } });
+  const { relationshipKey } = await import('../../src/types/syncPlan');
+  const key = relationshipKey(tuple.fromModel, tuple.fromColumn, tuple.toModel, tuple.toColumn, tuple.columnPairs);
+  await panel._simulateMessage({ type: 'generateSyncPlan', payload: { selections: { [key]: 'logical' } } });
+  const plan = JSON.parse(fs.readFileSync(path.join(root, '.erd-studio/.sync-plan.json'), 'utf8'));
+  expect(plan.relationships).toHaveLength(1);
+  expect(plan.relationships[0]).toMatchObject({ columnPairs: tuple.columnPairs, action: 'add-relationship-test-to-physical' });
+  expect(plan.relationshipTemplates.tuple).toMatch(/dbt_erd_relationship_tuple\.sql$/);
+});

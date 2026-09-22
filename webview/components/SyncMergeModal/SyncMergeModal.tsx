@@ -1,3 +1,4 @@
+import { relationshipColumnLabel, relationshipIdentity } from '../../../src/types/relationships';
 /**
  * SyncMergeModal — full-screen VS Code-style merge editor for sync reconciliation.
  *
@@ -350,7 +351,7 @@ function ColumnRow({ modelName, col, sourceStage, targetStage }: ColumnRowProps)
 // ---------------------------------------------------------------------------
 
 function RelationshipRow({ rel, sourceStage, targetStage }: { rel: RelationshipDiscrepancy; sourceStage: string; targetStage: string }) {
-  const key = relationshipKey(rel.fromModel, rel.fromColumn, rel.toModel, rel.toColumn);
+  const key = relationshipKey(rel.fromModel, rel.fromColumn, rel.toModel, rel.toColumn, rel.columnPairs);
 
   // Compute action hints for tooltips (only called for non-matched relationships)
   const relStatus = isConflictRelStatus(rel.status) ? rel.status : 'extra';
@@ -383,11 +384,11 @@ function RelationshipRow({ rel, sourceStage, targetStage }: { rel: RelationshipD
         <span className="sync-modal__rel-label">
           <span className="sync-modal__rel-model">{rel.fromModel}</span>
           <span className="sync-modal__rel-sep">.</span>
-          <span className="sync-modal__rel-col">{rel.fromColumn}</span>
+          <span className="sync-modal__rel-col">{relationshipColumnLabel(rel, 'from')}</span>
           <span className="sync-modal__rel-arrow">→</span>
           <span className="sync-modal__rel-model">{rel.toModel}</span>
           <span className="sync-modal__rel-sep">.</span>
-          <span className="sync-modal__rel-col">{rel.toColumn}</span>
+          <span className="sync-modal__rel-col">{relationshipColumnLabel(rel, 'to')}</span>
         </span>
       </td>
       <AcceptCell side={targetStage as GroundTruth} selectionKey={key} hint={targetHint}>{targetContent}</AcceptCell>
@@ -564,7 +565,7 @@ export function SyncMergeModal() {
       }
     }
     for (const r of relsWithIssues) {
-      keys.push(relationshipKey(r.fromModel, r.fromColumn, r.toModel, r.toColumn));
+      keys.push(relationshipKey(r.fromModel, r.fromColumn, r.toModel, r.toColumn, r.columnPairs));
     }
     return keys;
   }, [models, relsWithIssues]);
@@ -603,7 +604,7 @@ export function SyncMergeModal() {
   const relResolutionStatus = useMemo(() => {
     const status = new Map<string, boolean>();
     for (const r of relsWithIssues) {
-      const k = relationshipKey(r.fromModel, r.fromColumn, r.toModel, r.toColumn);
+      const k = relationshipKey(r.fromModel, r.fromColumn, r.toModel, r.toColumn, r.columnPairs);
       status.set(k, !!syncSelections[k]);
     }
     return status;
@@ -618,7 +619,7 @@ export function SyncMergeModal() {
   const { unresolved: unresolvedRels, resolved: resolvedRels } = useMemo(() => {
     if (!hideResolved) return { unresolved: relsWithIssues, resolved: [] as RelationshipDiscrepancy[] };
     return splitByResolved(relsWithIssues, (r) => {
-      const k = relationshipKey(r.fromModel, r.fromColumn, r.toModel, r.toColumn);
+      const k = relationshipKey(r.fromModel, r.fromColumn, r.toModel, r.toColumn, r.columnPairs);
       return !!relResolutionStatus.get(k);
     });
   }, [relsWithIssues, hideResolved, relResolutionStatus]);
@@ -790,7 +791,7 @@ export function SyncMergeModal() {
                   </tr>
                   {!relsCollapsed && unresolvedRels.map((r) => (
                     <RelationshipRow
-                      key={`${r.fromModel}.${r.fromColumn}-${r.toModel}.${r.toColumn}`}
+                      key={relationshipIdentity(r)}
                       rel={r}
                       sourceStage={sourceStage}
                       targetStage={targetStage}
@@ -840,7 +841,7 @@ export function SyncMergeModal() {
                       </tr>
                       {resolvedRels.map((r) => (
                         <RelationshipRow
-                          key={`resolved-${r.fromModel}.${r.fromColumn}-${r.toModel}.${r.toColumn}`}
+                          key={relationshipIdentity(r)}
                           rel={r}
                           sourceStage={sourceStage}
                           targetStage={targetStage}

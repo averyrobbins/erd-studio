@@ -1,3 +1,4 @@
+import { relationshipColumnLabel } from '../../../src/types/relationships';
 /**
  * ContextMenu — context menu for graph elements.
  *
@@ -157,10 +158,10 @@ export function ContextMenu() {
     if (!confirmingDelete) {
       setConfirmingDelete(true);
     } else {
-      const { fromModel, fromColumn, toModel, toColumn } = contextMenu.data;
+      const { fromModel, fromColumn, toModel, toColumn, columnPairs } = contextMenu.data;
       vscode.postMessage({
         type: 'removeRelationship',
-        payload: { fromModel, fromColumn, toModel, toColumn },
+        payload: { fromModel, fromColumn, toModel, toColumn, columnPairs },
       });
       closeContextMenu();
     }
@@ -171,10 +172,10 @@ export function ContextMenu() {
     (newCardinality: Cardinality) => {
       if (!contextMenu || contextMenu.type !== 'edge') return;
 
-      const { fromModel, fromColumn, toModel, toColumn } = contextMenu.data;
+      const { fromModel, fromColumn, toModel, toColumn, columnPairs } = contextMenu.data;
       vscode.postMessage({
         type: 'updateRelationship',
-        payload: { fromModel, fromColumn, toModel, toColumn, cardinality: newCardinality },
+        payload: { fromModel, fromColumn, toModel, toColumn, columnPairs, cardinality: newCardinality },
       });
       setCardinalityOpen(false);
       closeContextMenu();
@@ -186,10 +187,10 @@ export function ContextMenu() {
   const handleSwapCardinality = useCallback(() => {
     if (!contextMenu || contextMenu.type !== 'edge') return;
 
-    const { fromModel, fromColumn, toModel, toColumn, cardinality } = contextMenu.data;
+    const { fromModel, fromColumn, toModel, toColumn, cardinality, columnPairs } = contextMenu.data;
     vscode.postMessage({
       type: 'updateRelationship',
-      payload: { fromModel, fromColumn, toModel, toColumn, cardinality: swapCardinality(cardinality) },
+      payload: { fromModel, fromColumn, toModel, toColumn, columnPairs, cardinality: swapCardinality(cardinality) },
     });
     closeContextMenu();
   }, [contextMenu, vscode, closeContextMenu]);
@@ -198,12 +199,13 @@ export function ContextMenu() {
   const handleEditClick = useCallback(() => {
     if (!contextMenu || contextMenu.type !== 'edge') return;
 
-    const { fromModel, fromColumn, toModel, toColumn, cardinality } = contextMenu.data;
+    const { fromModel, fromColumn, toModel, toColumn, cardinality, columnPairs } = contextMenu.data;
     const editData: FkDialogEditData = {
       fromModel,
       fromColumn,
       toModel,
       toColumn,
+      columnPairs,
       cardinality,
     };
     openFkDialogForEdit(editData);
@@ -405,13 +407,13 @@ export function ContextMenu() {
         <div className="context-menu__row">
           <span className="context-menu__label">From</span>
           <span className="context-menu__value">
-            {edge.fromModel}.<strong>{edge.fromColumn}</strong>
+            {edge.fromModel}.<strong>{relationshipColumnLabel(edge, 'from')}</strong>
           </span>
         </div>
         <div className="context-menu__row">
           <span className="context-menu__label">To</span>
           <span className="context-menu__value">
-            {edge.toModel}.<strong>{edge.toColumn}</strong>
+            {edge.toModel}.<strong>{relationshipColumnLabel(edge, 'to')}</strong>
           </span>
         </div>
 

@@ -1,3 +1,4 @@
+import { relationshipPairs } from '../src/types/relationships';
 /**
  * Root application component for the semantic domain editor webview.
  *
@@ -441,8 +442,10 @@ function EditorCanvas() {
       if (edge.type !== 'fk') return; // Annotation link edges are not interactive
       if (edge.data) {
         const cols = new Set<string>();
-        cols.add(`${edge.data.fromModel}:${edge.data.fromColumn}`);
-        cols.add(`${edge.data.toModel}:${edge.data.toColumn}`);
+        for (const pair of relationshipPairs(edge.data)) {
+          cols.add(`${edge.data.fromModel}:${pair.fromColumn}`);
+          cols.add(`${edge.data.toModel}:${pair.toColumn}`);
+        }
         setHighlightedColumns(cols);
         // Clear node selection and activate edge dimming
         selectNode(null);

@@ -1,3 +1,4 @@
+import { relationshipPairs, relationshipColumns, validRelationshipColumns, type ColumnPair } from '../types/relationships';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'crypto';
@@ -115,8 +116,10 @@ export function parseSqlmeshSnapshot(raw: string): SqlmeshSnapshot {
   }
   for (const r of s.relationships) {
     if (!object(r) || !['fromId', 'fromColumn', 'toId', 'toColumn', 'audit'].every(k => typeof r[k] === 'string')
-      || !models.get(r.fromId as string)?.columns.some(c => c.name === r.fromColumn)
-      || !models.get(r.toId as string)?.columns.some(c => c.name === r.toColumn)) throw new Error('Invalid SQLMesh relationship endpoints.');
+      || !validRelationshipColumns(r) || (r.audit === 'erd_relationship_tuple' && !r.columnPairs)
+      || !relationshipPairs(r).every(p =>
+        models.get(r.fromId as string)?.columns.some(c => c.name === p.fromColumn)
+        && models.get(r.toId as string)?.columns.some(c => c.name === p.toColumn))) throw new Error('Invalid SQLMesh relationship endpoints.');
   }
   for (const [file, hash] of Object.entries(s.inputs)) {
     if (!relative(file) || typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid SQLMesh input fingerprint.');
@@ -257,21 +260,25 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
     return real;
   }
   /**
-   * Cardinality from single-column uniqueness evidence. Column names may be
+   * Cardinality from uniqueness keys contained in this relationship tuple. Column names may be
    * given in either spelling — the export's or the logical design's — so
    * `customer_id` finds Snowflake's `CUSTOMER_ID` unique key.
    */
-  relationshipCardinality(fromModel: string, fromColumn: string, toModel: string, toColumn: string) {
-    const one = (name: string, col: string) => {
+  relationshipCardinality(fromModel: string, fromColumn: string, toModel: string, toColumn: string, columnPairs?: ColumnPair[]) {
+    const pairs = relationshipPairs({ fromColumn, toColumn, columnPairs });
+    const one = (name: string, side: 'from' | 'to') => {
       const model = this.getModel(name);
       if (!model) return false;
-      const native = Object.prototype.hasOwnProperty.call(model.columnBindings ?? {}, col) ? model.columnBindings![col] : col;
-      const column = findByIdentifier(model.columns, native, foldingOf(model));
-      return !!column && model.uniqueKeys.some(k => k.length === 1 && k[0] === column.name);
+      const names = pairs.map(p => {
+        const col = side === 'from' ? p.fromColumn : p.toColumn;
+        const native = Object.prototype.hasOwnProperty.call(model.columnBindings ?? {}, col) ? model.columnBindings![col] : col;
+        return findByIdentifier(model.columns, native, foldingOf(model))?.name;
+      });
+      return names.every(Boolean) && model.uniqueKeys.some(k => k.length > 0 && k.every(c => names.includes(c)));
     };
-    return one(fromModel, fromColumn)
-      ? (one(toModel, toColumn) ? 'one-to-one' as const : 'one-to-many' as const)
-      : (one(toModel, toColumn) ? 'many-to-one' as const : 'many-to-many' as const);
+    return one(fromModel, 'from')
+      ? (one(toModel, 'to') ? 'one-to-one' as const : 'one-to-many' as const)
+      : (one(toModel, 'to') ? 'many-to-one' as const : 'many-to-many' as const);
   }
   /**
    * A logical model seeded from the export for Add Existing Model: columns take
@@ -312,8 +319,8 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
       // folds when it looks the uniqueness evidence up again.
       manifest.relationshipTests = snapshot.relationships.map(r => {
         const from = byId.get(r.fromId)!; const to = byId.get(r.toId)!;
-        return { fromModel: from.name, fromColumn: logicalName(from, r.fromColumn),
-          toModel: to.name, toColumn: logicalName(to, r.toColumn) };
+        return { fromModel: from.name, toModel: to.name,
+          ...relationshipColumns(relationshipPairs(r).map(p => ({ fromColumn: logicalName(from, p.fromColumn), toColumn: logicalName(to, p.toColumn) }))) };
       });
       this.snapshot = snapshot;
       this.signature = signature;
@@ -406,10 +413,17 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
     const relationships = this.snapshot.relationships.flatMap(r => {
       const from = byId.get(r.fromId)!; const to = byId.get(r.toId)!;
       if (!names.has(from.name) || !names.has(to.name)) return [];
-      const fromColumn = displayName(from, r.fromColumn), toColumn = displayName(to, r.toColumn);
-      const cardinality = this.relationshipCardinality(from.name, fromColumn, to.name, toColumn);
-      return [{ fromModel: from.name, fromColumn, toModel: to.name, toColumn, cardinality }];
+      const columns = relationshipColumns(relationshipPairs(r).map(p => ({ fromColumn: displayName(from, p.fromColumn), toColumn: displayName(to, p.toColumn) })));
+      const cardinality = this.relationshipCardinality(from.name, columns.fromColumn, to.name, columns.toColumn, columns.columnPairs);
+      return [{ fromModel: from.name, toModel: to.name, ...columns, cardinality }];
     });
+    for (const rel of relationships) {
+      const model = models.find(m => m.name === rel.fromModel);
+      for (const pair of relationshipPairs(rel)) {
+        const column = model?.columns.find(c => c.name === pair.fromColumn);
+        if (column) column.isForeignKey = true;
+      }
+    }
     return { schemaVersion: domain.schemaVersion, domain: domain.domain, layer: domain.layer,
       description: domain.description, modelFolder: domain.modelFolder, stage: 'physical', models, relationships,
       viewConfig: domain.viewConfig, readOnly: true, positionDraggable: true,

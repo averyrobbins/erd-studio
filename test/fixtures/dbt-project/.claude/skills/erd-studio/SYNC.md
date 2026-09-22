@@ -101,6 +101,16 @@ models:
               field: customer_id
 ```
 
+For a resolution with `columnPairs`, copy `relationshipTemplates.tuple` from the
+reviewed plan into `tests/generic/erd_relationship_tuple.sql` if absent. Add one
+model-level `erd_relationship_tuple` test with `from_columns`, `to: ref('parent')`
+and `to_columns` arrays in the same pair order. Modern dbt nests these under
+`arguments:`; older dbt accepts flat kwargs. Never emit one single-column test per
+component. The test skips a child tuple if any component is NULL (MATCH SIMPLE);
+add separate not_null tests when required. Preserve the full tuple when adding,
+editing or removing a logical relationship. Apply uniqueness only to a key contained
+in the selected tuple. Independent FK tests do not prove tuple membership.
+
 ## Execution Steps
 
 1. **Read** `.erd-studio/.sync-plan.json`
@@ -119,4 +129,4 @@ models:
 - **Cascade deletions**: When removing a model from logical, also remove any relationships referencing it
 - **Column ordering**: When adding columns to logical-models YAML, append to the end of the columns array
 
-<!-- erd-studio-harness: 17 -->
+<!-- erd-studio-harness: 18 -->
