@@ -12,6 +12,9 @@ heading — `## Unreleased — 1.0.0` — and the workflow releases exactly that
 
 ### Fixed
 
+- **SQLMesh observed aliases:** warehouse-only columns that collide with source
+  aliases have distinct read-only names; source comparison and relationship
+  endpoints keep their original identities and sync still rejects the conflict.
 - **SQLMesh model selection:** identifiers containing colons or whitespace now
   receive manual-selection guidance before launching the domain planner.
 - **SQLMesh explicit refresh:** Refresh Project Metadata and Inspect SQLMesh

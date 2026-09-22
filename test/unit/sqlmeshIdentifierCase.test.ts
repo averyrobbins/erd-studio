@@ -332,6 +332,33 @@ it('keeps bound source import guards when a source column cannot be represented 
   expect(() => adapter.seedModel('fct_order')).toThrow('logical naming rules');
 });
 
+it.each(['logical', 'physical'] as const)('distinguishes warehouse alias conflicts without moving source comparison or relationship identity (%s)', async stage => {
+  const { unified, logical, data } = await boundStages();
+  const snapshot = adapter.getSnapshot()!;
+  const order = snapshot.models.find(m => m.name === 'fct_order')!;
+  snapshot.warehouse = { environment: 'dev', observedAt: new Date().toISOString(), models: [{
+    id: order.id, status: 'observed', relation: 'analytics.fct_order', columns: [
+      ...order.columns, { name: 'CUSTOMER_KEY', dataType: 'TEXT', description: 'Observed alias collision' },
+    ],
+  }] };
+  const physical = adapter.buildPhysical(unified, data);
+  const columns = physical.models.find(m => m.name === 'fct_order')!.columns;
+  expect(new Set(columns.map(c => c.name)).size).toBe(columns.length);
+  expect(columns.find(c => c.name === 'customer_key')!.nativeName).toBe('CUSTOMER_ID');
+  const conflict = columns.find(c => c.nativeName === 'CUSTOMER_KEY')!;
+  expect(conflict.name).toBe('CUSTOMER_KEY (warehouse only)');
+  expect(conflict.isPrimaryKey).toBe(false);
+  expect(physical.relationships[0].fromColumn).toBe('customer_key');
+  const report = stage === 'logical' ? compare(logical, physical) : compare(physical, logical);
+  const compared = report.models.find(m => m.name === 'fct_order')!.columns;
+  expect(compared.find(c => c.name === 'customer_key')!.status).toBe('matched');
+  expect(compared.find(c => c.name === conflict.name)!.status).toBe(stage === 'logical' ? 'missing' : 'extra');
+  expect(() => buildSqlmeshSyncPlan({ report, snapshot, domainPath, semanticDir: '.erd-studio', preconditions: {},
+    selections: { [columnKey('fct_order', conflict.name)]: 'physical' } })).toThrow('collide');
+  snapshot.warehouse.models[0].columns.reverse();
+  expect(adapter.buildPhysical(unified, data).models.find(m => m.name === 'fct_order')!.columns.find(c => c.nativeName === 'CUSTOMER_KEY')!.name).toBe(conflict.name);
+});
+
 it.each([
   { bad: 'MISSING' }, { a: 'ORDER_ID', b: 'ORDER_ID' }, { 'Bad Alias': 'ORDER_ID' }, { amount: 'ORDER_ID' },
 ])('refuses malformed, dangling, or colliding bindings %j', async columnBindings => {

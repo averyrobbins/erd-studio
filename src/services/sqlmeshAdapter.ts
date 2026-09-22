@@ -372,6 +372,22 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
       // logical schema. Import and sync validate mappings on their write paths.
       const displayColumns = columns.map(c => ({ ...c, name: displayName(actual, c.name),
         ...(hasBindings(actual) ? { nativeName: c.name } : {}) }));
+      // A warehouse-only identifier can fold onto an explicit source alias.
+      // Keep the source alias (and its relationship handles) authoritative;
+      // distinguish observed-only rows with a stable, read-only display name.
+      // Reserve every original name so suffixes cannot shadow another column.
+      const counts = new Map<string, number>();
+      for (const c of displayColumns) counts.set(c.name, (counts.get(c.name) ?? 0) + 1);
+      const usedNames = new Set(displayColumns.map(c => c.name));
+      const conflicts = displayColumns.slice(actual.columns.length).filter(c => counts.get(c.name)! > 1);
+      conflicts.sort((a, b) => (a.nativeName ?? a.name) < (b.nativeName ?? b.name) ? -1 : 1);
+      for (const c of conflicts) {
+        const base = `${c.nativeName ?? c.name} (warehouse only)`;
+        let name = base, suffix = 2;
+        while (usedNames.has(name)) name = `${base} ${suffix++}`;
+        c.name = name;
+        usedNames.add(name);
+      }
       const displayFolding = hasBindings(actual) ? 'exact' as const : folding;
       const designMatches = matchIdentifiers(displayColumns, logical.columns ?? [], displayFolding).pairs;
       return { name: logical.name, schema: actual.schema, description: actual.description,
