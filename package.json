@@ -161,6 +161,11 @@
         "title": "Refresh My Reports",
         "category": "ERD Studio",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "erdStudio.planSqlmeshDomain",
+        "title": "Plan SQLMesh Domain",
+        "category": "ERD Studio"
       }
     ],
     "viewsContainers": {
@@ -293,6 +298,11 @@
           "command": "erdStudio.deleteLogicalModel",
           "when": "view == erdStudio.modelLibrary && viewItem == logicalModel",
           "group": "7_modification@1"
+        },
+        {
+          "command": "erdStudio.planSqlmeshDomain",
+          "when": "view == erdStudio.domainTree && viewItem == domain && erdStudio.projectProvider == sqlmesh",
+          "group": "6_execution@1"
         }
       ],
       "view/title": [
@@ -413,7 +423,7 @@
           "type": "string",
           "default": "",
           "scope": "machine",
-          "description": "Python executable in the SQLMesh project environment. Defaults to project .venv, then python3 (python on Windows). Used only by explicit metadata refresh."
+          "description": "Python executable in the SQLMesh project environment. Defaults to project .venv, then python3 (python on Windows). Used by metadata refresh, warehouse inspection, assisted source validation and explicit domain planning."
         },
         "erdStudio.sqlmesh.gateway": {
           "type": "string",

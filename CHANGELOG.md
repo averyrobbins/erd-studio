@@ -12,6 +12,12 @@ heading — `## Unreleased — 1.0.0` — and the workflow releases exactly that
 
 ### Fixed
 
+- **SQLMesh model lifecycle:** explicitly bound logical models can prepare assisted
+  native SQL creation; models absent from source can detach from a domain in one
+  undoable edit while preserving shared definitions and other domains.
+- **SQLMesh domain planning:** review exact native domain selections and launch
+  the interactive planner from the command palette/sidebar. Stale inputs are
+  rejected, and SQLMesh retains its own deployment prompts and downstream scope.
 - **SQLMesh automatic refresh:** an opt-in user setting refreshes source metadata
   after file changes, coalesces saves, serializes exports and updates comparisons.
   Logical/metadata writes do not trigger execution; deployment remains separate.

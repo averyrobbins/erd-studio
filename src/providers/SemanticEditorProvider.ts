@@ -95,7 +95,7 @@ import type { ReportTrackingService } from '../services/reportTrackingService';
 import type { CatalogService } from '../services/catalogService';
 import type { ProjectAdapter } from '../services/projectAdapter';
 import { SqlmeshProjectAdapter } from '../services/sqlmeshAdapter';
-import { buildSqlmeshSyncPlan, applySqlmeshLogicalPlan, captureSqlmeshInputs, assertSqlmeshPlanCurrent, foldingByModel } from '../services/sqlmeshSync';
+import { buildSqlmeshSyncPlan, applySqlmeshLogicalPlan, captureSqlmeshInputs, assertSqlmeshPlanCurrent, assertSqlmeshCreationTargets, foldingByModel } from '../services/sqlmeshSync';
 import type { SqlmeshSyncPlan } from '../services/sqlmeshSync';
 import { assertLogicalColumnMapping, sameIdentifier } from '../services/identifierMatching';
 import { assistantEnvironment, resolveExecutable } from '../services/assistantLaunch';
@@ -3923,7 +3923,8 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
       source === 'logical' ? context.physical : context.logical, new Set(context.unified.stubColumns ?? []));
     if (JSON.stringify(report) !== JSON.stringify(panel.lastDiscrepancyReport)) throw new Error('The comparison changed. Compare again before choosing resolutions.');
     const plan = buildSqlmeshSyncPlan({ report, selections, snapshot: context.snapshot,
-      domainPath: context.domainPath, semanticDir: context.semanticDir, preconditions: context.preconditions });
+      domainPath: context.domainPath, semanticDir: context.semanticDir, preconditions: context.preconditions, logical: context.unified });
+    assertSqlmeshCreationTargets(this.workspaceRoot, plan);
     if (plan.direction === 'logical-to-source') {
       plan.refreshCommand = sqlmeshRefreshCommand({ root: this.workspaceRoot, semanticDir: context.semanticDir,
         exporter: path.join(this.context.extensionUri.fsPath, 'dist', 'sqlmesh_export.py'),
@@ -3943,7 +3944,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     fs.writeFileSync(filePath, text, 'utf8');
     panel.sqlmeshPlan = { plan, text };
     this.post(webview, { type: 'syncPlanGenerated', payload: { filePath,
-      totalActions: plan.columns.length + plan.relationships.length, direction: plan.direction } });
+      totalActions: (plan.models?.length ?? 0) + plan.columns.length + plan.relationships.length, direction: plan.direction } });
     await vscode.window.showTextDocument(vscode.Uri.file(filePath), { preview: true, viewColumn: vscode.ViewColumn.Beside });
   }
 
@@ -3973,6 +3974,7 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     const saved = fs.readFileSync(path.join(this.workspaceRoot, context.semanticDir, '.sync-plan.json'), 'utf8');
     if (saved !== panel.sqlmeshPlan.text) throw new Error('The reviewed sync plan changed or was replaced. Regenerate it before execution.');
     assertSqlmeshPlanCurrent(panel.sqlmeshPlan.plan, context.preconditions);
+    assertSqlmeshCreationTargets(this.workspaceRoot, panel.sqlmeshPlan.plan);
     return { ...context, plan: panel.sqlmeshPlan.plan };
   }
 
@@ -3980,7 +3982,13 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     const context = await this.currentSqlmeshPlan(panelKey);
     const patch = applySqlmeshLogicalPlan(context.plan, context.unified, context.physical);
     this.checkSqlmeshSharedRemovals(context.plan, document.uri.fsPath, context.semanticDir, context.physical);
-    const success = await this.applyDomainEdit(document, section => { section.relationships = patch.relationships; },
+    const success = await this.applyDomainEdit(document, (section, parsed) => {
+      section.relationships = patch.relationships;
+      if (patch.modelNames) {
+        section.models = patch.modelNames;
+        pruneViewConfigForRemovedModels(parsed, new Set(context.unified.logical.models.map(m => m.name).filter(name => !patch.modelNames!.includes(name))));
+      }
+    },
       { webview, stage: 'logical', modelFiles: { save: patch.models.map(model => ({ model })) }, errorLabel: 'SQLMesh logical sync could not be applied.' });
     if (success) {
       const panel = this.openPanels.get(panelKey);

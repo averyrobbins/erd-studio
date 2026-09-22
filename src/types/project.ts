@@ -49,6 +49,8 @@ export interface SqlmeshSnapshot {
   gateway: string | null;
   config: string | null;
   models: ProjectModel[];
+  /** Explicit bindings whose source models do not exist yet; never deployment evidence. */
+  pendingModels?: Array<{ name: string; id: string; dialect: string }>;
   relationships: ProjectRelationship[];
   diagnostics: string[];
   /** Relative paths and hashes; used to detect edits AND deleted input files. */

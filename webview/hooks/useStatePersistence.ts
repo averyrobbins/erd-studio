@@ -216,14 +216,17 @@ export function useStatePersistence(): {
     // Order matters: setDiscrepancyVisible(false) clears sync state, so the
     // overlay must be enabled before sync mode / selections are restored.
     if (restored.discrepancyVisible && restored.discrepancyCompareStage) {
-      const compareAgainst = restored.discrepancyCompareStage;
+      // The extension reopens a domain in Logical after a window reload. A
+      // persisted Physical -> Logical comparison must not become Logical -> Logical.
+      const compareAgainst = domain.stage === 'logical' ? 'physical' : 'logical';
+      const sameDirection = compareAgainst === restored.discrepancyCompareStage;
       setDiscrepancyCompareStage(compareAgainst);
       setDiscrepancyVisible(true);
 
-      if (restored.syncMode) {
+      if (restored.syncMode && sameDirection) {
         setSyncMode(true);
       }
-      const selections = restored.syncSelections ?? {};
+      const selections = sameDirection ? restored.syncSelections ?? {} : {};
       const byChoice: Record<GroundTruth, string[]> = { logical: [], physical: [] };
       for (const [key, choice] of Object.entries(selections)) {
         if (choice === 'logical' || choice === 'physical') {

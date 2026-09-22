@@ -49,6 +49,33 @@ class ExportTest(unittest.TestCase):
         self.assertEqual(len(models), len({m["id"] for m in models.values()}))
         self.assertEqual(models["dim_customer"]["sourcePath"], "models/dim_customer.sql")
 
+    def test_pending_binding_becomes_a_loaded_model_after_source_creation(self):
+        file = self.semantic / "sqlmesh-bindings.json"
+        bindings = json.loads(file.read_text())
+        bindings["models"]["new_design"] = "analytics.new_design"
+        file.write_text(json.dumps(bindings))
+        result = self.export()
+        self.assertEqual(result["pendingModels"], [{"name": "new_design", "id": '"memory"."analytics"."new_design"', "dialect": "duckdb"}])
+        self.assertFalse(any(m["name"] == "new_design" for m in result["models"]))
+        (self.root / "models/new_design.sql").write_text(
+            "MODEL (name analytics.new_design, kind FULL); SELECT customer_id FROM analytics.dim_customer;")
+        result = self.export()
+        self.assertNotIn("pendingModels", result)
+        self.assertTrue(any(m["name"] == "new_design" for m in result["models"]))
+
+    def test_pending_bindings_require_unique_qualified_native_ids(self):
+        file = self.semantic / "sqlmesh-bindings.json"
+        bindings = json.loads(file.read_text())
+        bindings["models"]["new_design"] = "unqualified"
+        file.write_text(json.dumps(bindings))
+        with self.assertRaisesRegex(ValueError, "schema-qualified"):
+            self.export()
+        bindings["models"]["new_design"] = "analytics.new_design"
+        bindings["models"]["other_alias"] = "analytics.new_design"
+        file.write_text(json.dumps(bindings))
+        with self.assertRaisesRegex(ValueError, "Multiple aliases for pending"):
+            self.export()
+
     def test_export_is_stamped_with_a_verifiable_integrity_hash(self):
         result = self.export()
         self.assertRegex(result["integrity"], r"^sha256:[a-f0-9]{64}$")

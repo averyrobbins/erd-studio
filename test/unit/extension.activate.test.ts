@@ -363,6 +363,34 @@ describe('activate() project-root resolution', () => {
 
 
 describe('activate() with a native SQLMesh project', () => {
+  it.each([false, true])('prepares a domain command and rejects changes during review (changed=%s)', async changed => {
+    fs.cpSync(path.join(REPO_ROOT, 'test/fixtures/sqlmesh-project'), root, { recursive: true });
+    openWorkspace(root);
+    vscode._setMockConfiguration('erdStudio', 'sqlmesh.pythonPath', { globalValue: process.execPath });
+    vi.spyOn(vscode.window, 'showQuickPick').mockImplementation(async (items: any) => items[0]);
+    vi.spyOn(vscode.window, 'showInputBox').mockResolvedValue('dev');
+    warn.mockImplementation(async (message: string) => {
+      if (message.startsWith('Start an interactive')) {
+        if (changed) fs.appendFileSync(path.join(root, 'models/fct_order.sql'), '\n-- changed while reviewing\n');
+        return 'Start planner';
+      }
+      return undefined;
+    });
+    const terminal = vi.spyOn(vscode.window, 'createTerminal');
+    const error = vi.spyOn(vscode.window, 'showErrorMessage');
+    await activate(context);
+    await vscode.commands.executeCommand('erdStudio.planSqlmeshDomain');
+    const plan = JSON.parse(fs.readFileSync(path.join(root, '.erd-studio/sqlmesh-domain-plan.json'), 'utf8'));
+    expect(plan.modelIds).toHaveLength(2);
+    expect(plan.command.args).not.toContain('--auto-apply');
+    if (changed) {
+      expect(terminal).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('changed while reviewing'));
+    } else {
+      expect(terminal).toHaveBeenCalledWith(expect.objectContaining({ shellPath: process.execPath, shellArgs: plan.command.args, cwd: root }));
+    }
+  });
+
   it('registers the editor without dbt and never generates dbt selectors', async () => {
     fs.cpSync(path.join(REPO_ROOT, 'test/fixtures/sqlmesh-project'), root, { recursive: true });
     openWorkspace(root);

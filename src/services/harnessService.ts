@@ -34,7 +34,7 @@ export const HARNESS_VERSION = '17';
  * `SQLMESH_SYNC_INSTRUCTIONS` change. A file's provider marker decides which
  * version it is compared against.
  */
-export const SQLMESH_HARNESS_VERSION = '4';
+export const SQLMESH_HARNESS_VERSION = '5';
 
 /** The harness version the given provider's generated files carry. */
 export function harnessVersionFor(provider: 'dbt' | 'sqlmesh'): string {
@@ -820,7 +820,11 @@ logical design through the editor as one undoable edit. Logical ground truth pre
 AI-assisted SQL source edits. Use one direction per plan; v5 domains are required.
 ${SQLMESH_SYNC_INSTRUCTIONS.map((instruction, i) => `${i + 1}. ${instruction}`).join('\n')}
 
-Never apply a plan as part of viewing or refreshing a diagram.
+ERD Studio: Plan SQLMesh Domain is a separate, explicit execution workflow. It
+prepares exact native selections and starts the interactive planner only after
+review; SQLMesh may initialize state and include dependencies and affected downstream models outside
+the domain. No automatic apply flags are used. Never launch this workflow as part
+of source sync, viewing or refreshing a diagram.
 
 ${buildVersionMarker(SQLMESH_HARNESS_VERSION)}
 <!-- erd-studio-provider: sqlmesh -->

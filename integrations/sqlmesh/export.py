@@ -244,12 +244,22 @@ def export_project(root: Path, semantic: Path, gateway: str | None, config: str 
         if not isinstance(column_bindings, dict):
             raise ValueError("sqlmesh-bindings.json columns must be an object keyed by logical model alias")
         aliases = {}
+        pending_models = []
+        pending_ids = set()
         used = set()
         for alias, model_id in bindings["models"].items():
             if not re.fullmatch(r"[a-z][a-z0-9_]*", alias) or not isinstance(model_id, str):
                 raise ValueError(f"Invalid binding: {alias}")
             model = context.get_model(model_id)
             if model is None:
+                dialect = context.config.dialect or ""
+                if not exp.to_table(model_id, dialect=dialect).db:
+                    raise ValueError(f"Pending binding {alias} requires a schema-qualified model name")
+                canonical = normalize_model_name(model_id, default_catalog=context.default_catalog, dialect=dialect)
+                if canonical in pending_ids:
+                    raise ValueError(f"Multiple aliases for pending model {canonical}")
+                pending_ids.add(canonical)
+                pending_models.append({"name": alias, "id": canonical, "dialect": dialect})
                 diagnostics.append(f"Binding {alias} points to an unavailable model: {model_id}")
                 used.add(alias)
                 continue
@@ -379,6 +389,7 @@ def export_project(root: Path, semantic: Path, gateway: str | None, config: str 
             "schemaVersion": 2, "provider": "sqlmesh", "generatedAt": datetime.now(timezone.utc).isoformat(),
             "sqlmeshVersion": importlib.metadata.version("sqlmesh"), "gateway": gateway, "config": config,
             "models": models, "relationships": valid_relationships, "inputs": after, "diagnostics": diagnostics,
+            **({"pendingModels": pending_models} if pending_models else {}),
             "warehouse": warehouse})
     finally:
         context.close()

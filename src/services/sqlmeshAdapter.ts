@@ -102,6 +102,17 @@ export function parseSqlmeshSnapshot(raw: string): SqlmeshSnapshot {
     ids.add(m.id as string); names.add(m.name as string);
   }
   const models = new Map((s.models as unknown as ProjectModel[]).map(m => [m.id, m]));
+  if (s.pendingModels !== undefined) {
+    if (!Array.isArray(s.pendingModels)) throw new Error('Invalid pending SQLMesh model bindings.');
+    const pendingIds = new Set(ids), pendingNames = new Set(names);
+    for (const m of s.pendingModels) {
+      if (!object(m) || typeof m.name !== 'string' || !aliasPattern.test(m.name) || pendingNames.has(m.name)
+        || typeof m.id !== 'string' || !m.id || pendingIds.has(m.id) || typeof m.dialect !== 'string') {
+        throw new Error('Invalid or duplicate pending SQLMesh model binding.');
+      }
+      pendingNames.add(m.name); pendingIds.add(m.id);
+    }
+  }
   for (const r of s.relationships) {
     if (!object(r) || !['fromId', 'fromColumn', 'toId', 'toColumn', 'audit'].every(k => typeof r[k] === 'string')
       || !models.get(r.fromId as string)?.columns.some(c => c.name === r.fromColumn)

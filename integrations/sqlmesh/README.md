@@ -139,7 +139,12 @@ case as a diagnostic (*"…is not a dependency of the model"*) and still exports
 the edge; fix the model, then refresh. Unfiltered
 `unique_values` audits establish single-column uniqueness for cardinality.
 `unique_combination_of_columns` is exported as grouped metadata; composite FK
-cardinality is deferred. These are **audit declarations**, not evidence of passing
+cardinality is deferred. The shared editor stores single-column edges. Two separate
+column audits do not validate a tuple: parent keys `(1, A)` and `(2, B)` admit an
+invalid child `(1, B)` under separate checks. dbt's current grouped-cardinality
+heuristic does not solve that distinction either. A future tuple audit needs explicit
+ordered column-pair groups across both providers, the editor, comparison and sync.
+These are **audit declarations**, not evidence of passing
 audits. Lineage, `grain`, and `references` do not automatically become ERD edges.
 Other custom audits, filtered uniqueness, and unresolved arguments are diagnosed
 or omitted. Copying the convention does not run the audit.
@@ -217,15 +222,47 @@ provenance and SHA-256 preconditions covering source/export/bindings/shared desi
   generating a source plan so deployed drift is not confused with source drift.
 
 Changed/dirty inputs, replaced plans, stale metadata, unknown authoritative types,
-unsupported source models and mixed directions are rejected. Model creation/removal,
-Python/generated models, seeds and external definitions need a manual source workflow.
+unsupported source models and mixed directions are rejected.
+
+For a logical model that has no native source, define its columns/types and design
+intent, add a schema-qualified entry to `sqlmesh-bindings.json`, and refresh. The
+export records this as a `pendingModels` binding, separate from loaded models.
+Choose **Logical** for the whole missing model to prepare assisted creation at
+`models/<logical_alias>.sql`. The plan carries the exact native identity and checks
+that the target remains absent and inside the project. The assistant must derive
+real expressions from project sources/design intent and explicitly choose model
+kind/history behavior. Refresh promotes the pending binding after source creation.
+
+Choosing **Physical** for a logical model absent from source detaches it from this
+domain, including incident relationships and view links, in one undoable edit.
+Its shared logical YAML stays in the library and other domains remain intact.
+Use **Add Existing Model** to import an already loaded native model. Source deletion,
+Python/generated models, seeds and external definitions need a manual source workflow
+with review of downstream consumers and deployment/history consequences.
 No sync operation runs SQLMesh `plan`, `apply`, `run`, migrations or warehouse DDL.
+
+## Plan a native domain
+
+Run **ERD Studio: Plan SQLMesh Domain** or use a domain's sidebar context menu.
+Choose the domain and an environment (default prompt: `dev`). The editor writes
+`sqlmesh-domain-plan.json` with the exact canonical model selections and command,
+then offers to start SQLMesh's interactive planner. Dirty/stale inputs, missing
+bindings and changes during review are rejected. External models are omitted.
+Identifiers containing SQLMesh selector operators require manual selection.
+
+This is an explicit execution workflow. Unlike refresh or source sync, the planner
+can initialize/migrate SQLMesh state. It receives neither `--auto-apply` nor
+`--no-prompts`: review SQLMesh's own prompts before applying. Selections constrain
+**direct model changes**; dependencies and affected downstream models may be outside the ERD domain.
+See [SQLMesh model selection](https://sqlmesh.readthedocs.io/en/stable/guides/model_selection/).
+The existing dbt `selectors.yml` workflow remains unchanged.
 
 ## Current boundaries
 
-- This is not full dbt parity: composite FKs, automatic source rewrites, model-level
-  sync, additional warehouse adapters and domain execution
-  remain open. dbt commands are blocked on the native integration.
+- The core native workflow is close to dbt parity. Remaining gaps are true composite
+  FKs, assisted source deletion, generated-source editing and additional warehouse
+  adapters. Source synthesis still requires an assistant and known business logic,
+  as with dbt. dbt commands are blocked on the native integration.
 - Model discovery covers SQL, seeds, external, Python/generated and disabled models
   as loaded by SQLMesh. Unknown schemas never become deletion suggestions.
 - Freshness covers standard model/macro/audit/seed/external folders, root config,

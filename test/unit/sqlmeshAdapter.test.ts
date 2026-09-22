@@ -31,6 +31,33 @@ function editArtifact(fn: (s: any) => void) {
   fs.writeFileSync(adapter.artifactPath, JSON.stringify(s)); adapter.invalidate();
 }
 
+it('retains pending bindings separately and rejects duplicate loaded or pending identities', async () => {
+  editArtifact(s => { s.pendingModels = [{ name: 'new_model', id: '"analytics"."new_model"', dialect: 'duckdb' }]; });
+  const loaded = await adapter.load();
+  expect(adapter.getSnapshot()!.pendingModels![0].name).toBe('new_model');
+  expect(loaded.manifest.models.has('new_model')).toBe(false);
+  const original = JSON.parse(fs.readFileSync(adapter.artifactPath, 'utf8'));
+  for (const pending of [[original.pendingModels[0], original.pendingModels[0]],
+    [{ ...original.pendingModels[0], name: original.models[0].name }],
+    [{ ...original.pendingModels[0], id: original.models[0].id }]]) {
+    const value = { ...original, pendingModels: pending }; value.integrity = snapshotIntegrity(value);
+    expect(() => parseSqlmeshSnapshot(JSON.stringify(value))).toThrow('pending');
+  }
+});
+
+it('does not mistake a composite unique declaration for independently unique FK endpoints', async () => {
+  editArtifact(s => {
+    const parent = s.models.find((m: any) => m.name === 'dim_customer');
+    parent.uniqueKeys = [['customer_id', 'name']];
+    const child = s.models.find((m: any) => m.name === 'fct_order');
+    s.relationships.push({ fromId: child.id, fromColumn: 'order_id', toId: parent.id, toColumn: 'name', audit: 'erd_relationship' });
+  });
+  const data = await adapter.load();
+  const physical = adapter.buildPhysical(domain(), data);
+  expect(data.manifest.compositeUniqueGroups.get('dim_customer')).toEqual([['customer_id', 'name']]);
+  expect(physical.relationships.find(r => r.fromColumn === 'customer_id')!.cardinality).toBe('many-to-many');
+});
+
 it('resolves exported source paths and reports missing or unavailable definitions', async () => {
   await adapter.load();
   expect(adapter.resolveSourceFile('fct_order')).toBe(fs.realpathSync(path.join(root, 'models/fct_order.sql')));

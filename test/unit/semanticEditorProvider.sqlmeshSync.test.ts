@@ -49,6 +49,62 @@ beforeEach(async () => {
 afterEach(() => { panel.dispose(); vi.restoreAllMocks(); fs.rmSync(root, { recursive: true, force: true }); });
 const error = () => (panel._postedMessages as any[]).filter(m => m.type === 'error').at(-1)?.payload.message;
 
+it('detaches an absent model in one edit while retaining shared YAML and other domains', async () => {
+  const domainPath = path.join(root, '.erd-studio/silver/orders.json');
+  const otherPath = path.join(root, '.erd-studio/silver/other.json');
+  const other = fs.readFileSync(domainPath, 'utf8').replace('"orders"', '"other"');
+  fs.writeFileSync(otherPath, other);
+  const artifact = path.join(root, '.erd-studio/sqlmesh.json');
+  const snapshot = JSON.parse(fs.readFileSync(artifact, 'utf8'));
+  const id = snapshot.models.find((m: any) => m.name === 'fct_order').id;
+  snapshot.models = snapshot.models.filter((m: any) => m.id !== id);
+  snapshot.relationships = snapshot.relationships.filter((r: any) => r.fromId !== id && r.toId !== id);
+  snapshot.integrity = snapshotIntegrity(snapshot);
+  fs.writeFileSync(artifact, JSON.stringify(snapshot));
+  const libraryFile = path.join(root, '.erd-studio/logical-models/fct_order.yml');
+  const beforeLibrary = fs.readFileSync(libraryFile, 'utf8');
+  await provider.refreshAllOpenDomains();
+  await panel._simulateMessage({ type: 'toggleDiscrepancy', payload: { enabled: true, compareAgainst: 'physical' } });
+  await panel._simulateMessage({ type: 'generateSyncPlan', payload: { selections: { 'model:fct_order': 'physical' } } });
+  expect(error()).toBeUndefined();
+  const before = edits.mock.calls.length;
+  await panel._simulateMessage({ type: 'applySqlmeshLogicalSync' });
+  expect(error()).toBeUndefined();
+  expect(edits.mock.calls.length - before).toBe(1);
+  const saved = JSON.parse(fs.readFileSync(domainPath, 'utf8'));
+  expect(saved.logical.models).toEqual(['dim_customer']);
+  expect(saved.logical.relationships).toEqual([]);
+  expect(fs.readFileSync(libraryFile, 'utf8')).toBe(beforeLibrary);
+  expect(fs.readFileSync(otherPath, 'utf8')).toBe(other);
+});
+
+it('prepares a bound model creation plan and refuses a target that appears after review', async () => {
+  const artifact = path.join(root, '.erd-studio/sqlmesh.json');
+  const snapshot = JSON.parse(fs.readFileSync(artifact, 'utf8'));
+  const native = snapshot.models.find((m: any) => m.name === 'fct_order');
+  snapshot.models = snapshot.models.filter((m: any) => m.id !== native.id);
+  snapshot.relationships = snapshot.relationships.filter((r: any) => r.fromId !== native.id && r.toId !== native.id);
+  snapshot.pendingModels = [{ name: native.name, id: native.id, dialect: native.dialect }];
+  delete snapshot.inputs['models/fct_order.sql'];
+  fs.rmSync(path.join(root, 'models/fct_order.sql'));
+  snapshot.integrity = snapshotIntegrity(snapshot);
+  fs.writeFileSync(artifact, JSON.stringify(snapshot));
+  await provider.refreshAllOpenDomains();
+  await panel._simulateMessage({ type: 'toggleDiscrepancy', payload: { enabled: true, compareAgainst: 'physical' } });
+  await panel._simulateMessage({ type: 'generateSyncPlan', payload: { selections: { 'model:fct_order': 'logical' } } });
+  expect(error()).toBeUndefined();
+  const plan = JSON.parse(fs.readFileSync(path.join(root, '.erd-studio/.sync-plan.json'), 'utf8'));
+  expect(plan.models[0].action).toBe('add-to-physical');
+  expect(plan.refreshCommand.args[0]).toBe(path.join(repo, 'dist/sqlmesh_export.py'));
+  fs.writeFileSync(path.join(root, 'models/fct_order.sql'), 'SELECT 1;');
+  const launch = vi.spyOn(vscode.window, 'createTerminal');
+  (vscode.workspace as any).isTrusted = true;
+  try { await panel._simulateMessage({ type: 'launchClaudeSync' }); }
+  finally { (vscode.workspace as any).isTrusted = false; }
+  expect(error()).toMatch(/stale|already exists|changed/);
+  expect(launch).not.toHaveBeenCalled();
+});
+
 it('recomputes an open comparison after a logical column edit', async () => {
   await panel._simulateMessage({ type: 'toggleDiscrepancy', payload: { enabled: true, compareAgainst: 'physical' } });
   const report = () => (panel._postedMessages as any[]).filter(m => m.type === 'discrepancyReport').at(-1)?.payload;

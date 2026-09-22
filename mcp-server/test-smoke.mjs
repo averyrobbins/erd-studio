@@ -17,6 +17,7 @@ const bound = JSON.parse(fs.readFileSync(boundFile, 'utf8'));
 // Exercise the optional field through the backwards-compatible unstamped reader.
 delete bound.integrity;
 bound.models.find(m => m.name === 'fct_order').columnBindings = { customer_key: 'customer_id' };
+bound.pendingModels = [{ name: 'new_model', id: '"analytics"."new_model"', dialect: 'duckdb' }];
 fs.writeFileSync(boundFile, JSON.stringify(bound));
 const SERVER = path.resolve(__dirname, 'dist/index.js');
 
@@ -170,6 +171,9 @@ async function main() {
       && boundData.relationships?.[0]?.fromColumn === 'customer_key') {
     console.log('✅ SQLMesh explicit column aliases retain native identifiers and relationship endpoints');
   } else { fail('SQLMesh bound identity was lost in MCP output'); }
+  if (boundData.pendingModels?.[0]?.name === 'new_model' && !boundData.models?.some(m => m.name === 'new_model')) {
+    console.log('✅ SQLMesh pending bindings remain separate from loaded models');
+  } else { fail('SQLMesh pending binding was lost or presented as a loaded model'); }
 
   // 8. Call get_editor_setup
   console.log('\n--- get_editor_setup ---');

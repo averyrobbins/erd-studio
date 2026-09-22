@@ -25,7 +25,9 @@ import { detectProjectProvider, resolveProjectRoot } from './services/projectDet
 import { DbtProjectAdapter } from './services/projectAdapter';
 import { SqlmeshProjectAdapter, isSqlmeshSourceInput, sqlmeshWatchPatterns } from './services/sqlmeshAdapter';
 import { SqlmeshRefreshCoordinator } from './services/sqlmeshAutoRefresh';
-import { refreshSqlmesh, exportTimeoutMs } from './services/sqlmeshRefresh';
+import { buildSqlmeshDomainPlan } from './services/sqlmeshDomainPlan';
+import { assistantEnvironment, resolveExecutable } from './services/assistantLaunch';
+import { refreshSqlmesh, exportTimeoutMs, sqlmeshRefreshCommand } from './services/sqlmeshRefresh';
 import { readDbtProjectConfig } from './services/dbtProjectConfig';
 import { ModelLibraryTreeProvider, type ModelLibraryNode } from './providers/ModelLibraryTreeProvider';
 import { DOMAIN_EDITOR_VIEW_TYPE, hasOpenDomainCanvas, saveAllAndReload } from './services/recoveryService';
@@ -81,6 +83,7 @@ const NO_PROJECT_MESSAGE =
  */
 export const NO_LEGACY_ALIAS = new Set([
   'erdStudio.inspectSqlmeshWarehouse',
+  'erdStudio.planSqlmeshDomain',
   'erdStudio.reportBug',
   'erdStudio.setFeedbackApiKey',
   'erdStudio.clearFeedbackApiKey',
@@ -340,6 +343,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const semanticDir = getErdStudioSetting('semanticDir', '.erd-studio');
   const projectProvider = detectProjectProvider(workspaceRoot, getErdStudioSetting('provider', 'auto'), semanticDir) ?? 'dbt';
+  void vscode.commands.executeCommand('setContext', 'erdStudio.projectProvider', projectProvider);
 
   // v0.6.44 moved the default data directory from erd-studio/ to .erd-studio/.
   // Rename legacy folders in place before any service reads from disk so
@@ -1095,6 +1099,66 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await vscode.commands.executeCommand('vscode.openWith', newFileUri, DOMAIN_EDITOR_VIEW_TYPE);
       },
     ),
+    vscode.commands.registerCommand('erdStudio.planSqlmeshDomain', async (item?: TreeElement) => {
+      if (!(projectAdapter instanceof SqlmeshProjectAdapter)) {
+        void vscode.window.showInformationMessage('Native domain planning is available for SQLMesh projects. For dbt, use generated selectors.yml.');
+        return;
+      }
+      if (!vscode.workspace.isTrusted) {
+        void vscode.window.showWarningMessage('Trust this workspace before running SQLMesh.');
+        return;
+      }
+      try {
+        const summaries = domainService.listDomains(workspaceRoot, semanticDir);
+        let selected = item?.type === 'domain' ? summaries.find(d => d.filePath === item.summary.filePath) : undefined;
+        if (!selected) {
+          const picked = await vscode.window.showQuickPick(summaries.map(summary => ({
+            label: summary.domain, description: summary.layer, summary,
+          })), { placeHolder: 'Choose the domain whose native model changes to plan' });
+          selected = picked?.summary;
+        }
+        if (!selected) return;
+        const environment = await vscode.window.showInputBox({ prompt: 'SQLMesh environment for the interactive plan', value: 'dev',
+          validateInput: value => /^[a-zA-Z][a-zA-Z0-9_]*$/.test(value) ? undefined : 'Use letters, digits and underscores, starting with a letter.' });
+        if (!environment) return;
+        const assertSaved = () => {
+          if (vscode.workspace.textDocuments.some(doc => doc.isDirty && !path.relative(workspaceRoot, doc.uri.fsPath).startsWith('..'))) {
+            throw new Error('Save project files before preparing or launching a domain plan.');
+          }
+        };
+        assertSaved();
+        projectAdapter.invalidate(); await projectAdapter.load();
+        if (projectAdapter.status !== 'ready') throw new Error('Refresh SQLMesh metadata before planning this domain.');
+        const snapshot = projectAdapter.getSnapshot()!;
+        const domainBytes = fs.readFileSync(selected.filePath, 'utf8');
+        const requested = sqlmeshRefreshCommand({ root: workspaceRoot, semanticDir, exporter: '',
+          python: getErdStudioSetting('sqlmesh.pythonPath', '') }).executable;
+        const executable = resolveExecutable(/[/\\]/.test(requested) ? path.resolve(workspaceRoot, requested) : requested);
+        if (!executable) throw new Error('SQLMesh Python was not found. Check erdStudio.sqlmesh.pythonPath.');
+        const plan = buildSqlmeshDomainPlan({ root: workspaceRoot, python: executable, environment,
+          domain: domainService.getDomain(selected.filePath), snapshot });
+        const file = path.join(workspaceRoot, semanticDir, 'sqlmesh-domain-plan.json');
+        fs.writeFileSync(file, JSON.stringify(plan, null, 2) + '\n');
+        await vscode.window.showTextDocument(vscode.Uri.file(file), { preview: true });
+        const choice = await vscode.window.showWarningMessage(
+          `Start an interactive SQLMesh plan for ${selected.domain} in ${environment}?`,
+          { modal: true, detail: `${plan.modelIds.length} native model(s). SQLMesh may initialize/migrate state and include dependencies and affected downstream models outside this domain. Review the saved command; SQLMesh will ask before applying.` },
+          'Start planner');
+        if (choice !== 'Start planner') return;
+        assertSaved();
+        projectAdapter.invalidate(); await projectAdapter.load();
+        if (projectAdapter.status !== 'ready' || fs.readFileSync(selected.filePath, 'utf8') !== domainBytes
+          || JSON.stringify(projectAdapter.getSnapshot()?.inputs) !== JSON.stringify(snapshot.inputs)) {
+          throw new Error('The domain or project changed while reviewing. Prepare a fresh domain plan.');
+        }
+        const terminal = vscode.window.createTerminal({ name: `SQLMesh plan: ${selected.domain} → ${environment}`,
+          cwd: workspaceRoot, shellPath: executable, shellArgs: plan.command.args,
+          env: assistantEnvironment({ workspaceRoot, pythonPath: executable }) });
+        terminal.show();
+      } catch (error) {
+        void vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+      }
+    }),
     vscode.commands.registerCommand('erdStudio.inspectSqlmeshWarehouse', async () => {
       if (projectAdapter.provider !== 'sqlmesh') {
         void vscode.window.showInformationMessage('Warehouse inspection is available for native SQLMesh DuckDB or PostgreSQL projects.');
@@ -1158,7 +1222,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Run a domain refresh in dbt with: dbt build --selector domain_{layer}_{domain}
     vscode.commands.registerCommand('erdStudio.syncDomainTags', async () => {
       if (projectProvider === 'sqlmesh') {
-        void vscode.window.showInformationMessage('SQLMesh domain execution is not available in this first draft. Use explicit SQLMesh model selections.');
+        await vscode.commands.executeCommand('erdStudio.planSqlmeshDomain');
         return;
       }
       await vscode.window.withProgress(

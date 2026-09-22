@@ -51,6 +51,17 @@ afterEach(() => {
 });
 
 describe('useStatePersistence restore', () => {
+  it('reopens a Physical comparison against Physical after the editor defaults to Logical', () => {
+    mockVsCode.getState.mockReturnValue({ discrepancyVisible: true, discrepancyCompareStage: 'logical',
+      syncMode: true, syncSelections: { 'model:a': 'physical' } });
+    useEditorStore.setState({ domain });
+    renderHook(() => useStatePersistence());
+    expect(useEditorStore.getState().discrepancyCompareStage).toBe('physical');
+    expect(useEditorStore.getState().syncMode).toBe(false);
+    expect(useEditorStore.getState().syncSelections).toEqual({});
+    expect(mockVsCode.postMessage).toHaveBeenCalledWith({ type: 'toggleDiscrepancy', payload: { enabled: true, compareAgainst: 'physical' } });
+  });
+
   it('restores canvas mode, discrepancy overlay and sync-merge selections and re-requests the report', () => {
     const persisted: PersistedState = {
       selectedNode: 'a',

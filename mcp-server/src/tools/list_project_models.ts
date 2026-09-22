@@ -22,6 +22,7 @@ export const list_project_models = {
     const models = (physical?.models ?? []).filter(m => !filter || m.name.toLowerCase().includes(filter) || m.qualifiedName?.toLowerCase().includes(filter));
     return { content: [{ type: 'text' as const, text: JSON.stringify({ provider: projectAdapter.provider,
       ...(mesh ? { ...mesh.integration } : {}),
+      ...(mesh?.getSnapshot()?.pendingModels ? { pendingModels: mesh.getSnapshot()!.pendingModels } : {}),
       count: models.length, total: names.size, models, relationships: physical?.relationships ?? [] }, null, 2) }] };
   },
 };
