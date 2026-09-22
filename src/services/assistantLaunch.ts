@@ -55,22 +55,23 @@ export function findVenvBinDir(workspaceRoot: string, platform: NodeJS.Platform 
 }
 
 /**
- * Environment overrides for a directly launched assistant: the directories a
- * shell activation would have put first on PATH — the configured
- * `erdStudio.sqlmesh.pythonPath`'s directory, then the project venv — plus
- * `VIRTUAL_ENV` for tools that read it. Empty when there is nothing to add.
+ * Use one selected Python environment. Mixing a configured interpreter with a
+ * different project's virtualenv can run validation with the wrong SQLMesh.
+ * VS Code removes inherited variables whose override is null.
  */
 export function assistantEnvironment(options: {
   workspaceRoot: string; pythonPath?: string; basePath?: string; platform?: NodeJS.Platform;
-}): Record<string, string> {
+}): { PATH?: string; VIRTUAL_ENV?: string | null; PYTHONHOME?: null } {
   const platform = options.platform ?? process.platform;
-  const prepend: string[] = [];
-  if (options.pythonPath && path.isAbsolute(options.pythonPath)) prepend.push(path.dirname(options.pythonPath));
-  const venvBin = findVenvBinDir(options.workspaceRoot, platform);
-  if (venvBin && !prepend.includes(venvBin)) prepend.push(venvBin);
-  if (!prepend.length) return {};
   const base = options.basePath ?? process.env.PATH ?? '';
-  const env: Record<string, string> = { PATH: [...prepend, base].filter(Boolean).join(path.delimiter) };
-  if (venvBin) env.VIRTUAL_ENV = path.dirname(venvBin);
-  return env;
+  const requested = options.pythonPath?.trim();
+  const configured = requested && (path.isAbsolute(requested) ? requested
+    : /[/\\]/.test(requested) ? path.resolve(options.workspaceRoot, requested)
+    : resolveExecutable(requested, base, platform));
+  if (requested && !configured) throw new Error(`Configured SQLMesh Python ${requested} was not found on PATH.`);
+  const bin = configured ? path.dirname(configured) : findVenvBinDir(options.workspaceRoot, platform);
+  if (!bin) return {};
+  const root = path.dirname(bin);
+  const virtualEnv = fs.existsSync(path.join(root, 'pyvenv.cfg')) ? root : null;
+  return { PATH: [bin, base].filter(Boolean).join(path.delimiter), VIRTUAL_ENV: virtualEnv, PYTHONHOME: null };
 }

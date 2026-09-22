@@ -218,3 +218,29 @@ it('keeps quoted-column uniqueness evidence separate from its folded twin', asyn
   expect(adapter.relationshipCardinality('fct_order', 'ORDER_ID', 'dim_customer', 'CUSTOMER_ID')).toBe('one-to-one');
   expect(adapter.relationshipCardinality('fct_order', 'order_id', 'dim_customer', 'CUSTOMER_ID')).toBe('many-to-one');
 });
+
+it('does not copy a logical primary-key badge to both physical case siblings', async () => {
+  makeSnowflake(s => {
+    s.models.find((m: any) => m.name === 'fct_order').columns.push({ name: 'order_id', dataType: 'INT', description: '' });
+  });
+  const { physical } = await stages();
+  const columns = physical.models.find(m => m.name === 'fct_order')!.columns;
+  expect(columns.find(c => c.name === 'order_id')!.isPrimaryKey).toBe(true);
+  expect(columns.find(c => c.name === 'ORDER_ID')!.isPrimaryKey).toBe(false);
+});
+
+it.each([false, true])('retains observed case siblings without order-dependent type overwrites (reverse=%s)', async reverse => {
+  makeSnowflake(s => {
+    const order = s.models.find((m: any) => m.name === 'fct_order');
+    order.columns.find((c: any) => c.name === 'AMOUNT').name = 'amount';
+    const observed = [{ name: 'AMOUNT', dataType: 'VARCHAR', description: '' }, { name: 'amount', dataType: 'BIGINT', description: '' }];
+    s.warehouse = { environment: 'dev', observedAt: new Date().toISOString(), models: s.models.map((m: any) => ({
+      id: m.id, status: m === order ? 'observed' : 'unavailable', relation: m === order ? '"db"."schema"."orders"' : null,
+      columns: m === order ? (reverse ? [...observed].reverse() : observed) : [],
+    })) };
+  });
+  const { physical } = await stages();
+  const columns = physical.models.find(m => m.name === 'fct_order')!.columns;
+  expect(columns.find(c => c.name === 'AMOUNT')?.dataType).toBe('VARCHAR');
+  expect(columns.find(c => c.name === 'amount')?.dataType).toBe('BIGINT');
+});

@@ -7,7 +7,7 @@ import type { DisplayDomain, ExistingModelPreview } from '../types/display';
 import type { SemanticModel, UnifiedDomain } from '../types/semantic';
 import type { IdentifierFolding } from '../types/naming';
 import type { ProjectAdapter, ProjectMetadata } from './projectAdapter';
-import { assertLogicalColumnMapping, findByIdentifier, logicalSpelling } from './identifierMatching';
+import { assertLogicalColumnMapping, findByIdentifier, logicalSpelling, matchIdentifiers } from './identifierMatching';
 
 const MAX_BYTES = 32 * 1024 * 1024;
 const aliasPattern = /^[a-z][a-z0-9_]*$/;
@@ -319,11 +319,13 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
       // Observed columns replace their source counterpart (observed types win)
       // and observed-only columns are appended; the source spelling is kept.
       const columns = actual.columns.map(c => ({ ...c }));
-      for (const c of observed) {
-        const existing = findByIdentifier(columns, c.name, folding);
-        if (existing) { existing.dataType = c.dataType; existing.description ||= c.description; }
-        else columns.push({ ...c });
+      const observationMatches = matchIdentifiers(columns, observed, folding);
+      for (const [existing, observation] of observationMatches.pairs) {
+        existing.dataType = observation.dataType;
+        existing.description ||= observation.description;
       }
+      columns.push(...observationMatches.unmatchedTarget.map(c => ({ ...c })));
+      const designMatches = matchIdentifiers(columns, logical.columns ?? [], folding).pairs;
       return { name: logical.name, schema: actual.schema, description: actual.description,
         ...(actual.sourcePath ? { sourcePath: actual.sourcePath } : {}),
         qualifiedName: actual.id, columnsKnown: actual.columnsKnown || warehouse?.status === 'observed', existsInProject: true, warehouse,
@@ -331,7 +333,7 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
         rationale: logical.rationale, grain: logical.grain, modelRole: logical.modelRole,
         provenance: { columns: observed.length ? ['sqlmesh-observed' as const, source] : [source], types: observed.length ? 'sqlmesh-observed' as const : source },
         columns: columns.map(c => {
-          const design = findByIdentifier(logical.columns ?? [], c.name, folding);
+          const design = designMatches.get(c);
           return { name: c.name, dataType: c.dataType ?? '', description: c.description,
             isPrimaryKey: design?.isPrimaryKey ?? false, isForeignKey: design?.isForeignKey ?? false,
             isNaturalKey: design?.isNaturalKey ?? false, scdType: design?.scdType, additiveType: design?.additiveType };

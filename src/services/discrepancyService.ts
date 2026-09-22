@@ -16,7 +16,7 @@ import type {
   RelationshipDiscrepancy,
 } from '../types/discrepancy';
 import { normaliseName as foldModelName } from './nameUtils';
-import { foldIdentifier, matchIdentifiers } from './identifierMatching';
+import { findByIdentifier, foldIdentifier, matchIdentifiers } from './identifierMatching';
 import type { IdentifierFolding } from '../types/naming';
 
 // ---------------------------------------------------------------------------
@@ -323,22 +323,59 @@ function compareColumns(
 function compareRelationships(
   sourceRels: DisplayRelationship[],
   targetRels: DisplayRelationship[],
+  sourceModels: DisplayModel[],
+  targetModels: DisplayModel[],
   normaliseName: (name: string) => string,
   foldingFor: (modelName: string) => IdentifierFolding,
 ): RelationshipDiscrepancy[] {
-  // Model names fold like models; each column folds like the model it belongs to.
-  const relKey = (r: DisplayRelationship) => [
-    normaliseName(r.fromModel), foldIdentifier(r.fromColumn, foldingFor(r.fromModel)),
-    normaliseName(r.toModel), foldIdentifier(r.toColumn, foldingFor(r.toModel)),
-  ].join('|');
-  const targetMap = new Map(targetRels.map((r) => [relKey(r), r]));
-  const visited = new Set<string>();
+  // Resolve endpoints using the SAME one-to-one column pairing as the column
+  // report. Folding an entire edge independently can let ID and quoted "id"
+  // both claim a single logical edge, even when only one has a relationship.
+  type Name = { name: string };
+  const vocabulary = (models: DisplayModel[], rels: DisplayRelationship[]) => {
+    const result = new Map<string, Name[]>();
+    for (const model of models) result.set(normaliseName(model.name), [...model.columns]);
+    const declared = new Map([...result].map(([model, columns]) => [model, [...columns]]));
+    for (const rel of rels) {
+      for (const [model, name] of [[rel.fromModel, rel.fromColumn], [rel.toModel, rel.toColumn]]) {
+        const key = normaliseName(model);
+        const columns = result.get(key) ?? [];
+        // Relationship declarations can name columns absent from metadata.
+        // Add only truly absent names, not another spelling of an existing one.
+        if (!(declared.get(key) ?? []).some(c => foldIdentifier(c.name, foldingFor(model)) === foldIdentifier(name, foldingFor(model)))
+          && !columns.some(c => c.name === name)) columns.push({ name });
+        result.set(key, columns);
+      }
+    }
+    return result;
+  };
+  const sourceNames = vocabulary(sourceModels, sourceRels);
+  const targetNames = vocabulary(targetModels, targetRels);
+  const pairs = new Map<Name, Name>();
+  for (const [model, columns] of sourceNames) {
+    for (const [s, t] of matchIdentifiers(columns, targetNames.get(model) ?? [], foldingFor(model)).pairs) pairs.set(s, t);
+  }
+  const endpoint = (model: string, name: string, side: 'source' | 'target') => {
+    const key = normaliseName(model);
+    const columns = (side === 'source' ? sourceNames : targetNames).get(key) ?? [];
+    const column = findByIdentifier(columns, name, foldingFor(model));
+    const target = column && (side === 'target' ? column : pairs.get(column));
+    return target ? [key, 'paired', target.name] : [key, side, name];
+  };
+  const relKey = (r: DisplayRelationship, side: 'source' | 'target') => JSON.stringify([
+    endpoint(r.fromModel, r.fromColumn, side), endpoint(r.toModel, r.toColumn, side),
+  ]);
+  const targetMap = new Map<string, DisplayRelationship[]>();
+  for (const rel of targetRels) {
+    const key = relKey(rel, 'target');
+    targetMap.set(key, [...(targetMap.get(key) ?? []), rel]);
+  }
+  const visited = new Set<DisplayRelationship>();
   const result: RelationshipDiscrepancy[] = [];
 
   for (const rel of sourceRels) {
-    const key = relKey(rel);
-    const targetRel = targetMap.get(key);
-    visited.add(key);
+    const targetRel = targetMap.get(relKey(rel, 'source'))?.shift();
+    if (targetRel) visited.add(targetRel);
 
     if (!targetRel) {
       result.push({
@@ -372,7 +409,7 @@ function compareRelationships(
 
   // Relationships in target but not source
   for (const rel of targetRels) {
-    if (!visited.has(relKey(rel))) {
+    if (!visited.has(rel)) {
       result.push({
         fromModel: rel.fromModel,
         fromColumn: rel.fromColumn,
@@ -484,7 +521,7 @@ export function compare(
     }
   }
 
-  const relationships = compareRelationships(source.relationships, target.relationships, normaliseName, foldingFor);
+  const relationships = compareRelationships(source.relationships, target.relationships, sourceModels, targetModels, normaliseName, foldingFor);
 
   return {
     domain: source.domain,

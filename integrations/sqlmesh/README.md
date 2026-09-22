@@ -173,9 +173,10 @@ provenance and SHA-256 preconditions covering source/export/bindings/shared desi
 - **Edit source with Claude** launches Claude Code directly (no shell) with
   native SQLMesh instructions, after the usual confirmation. `claude` is resolved
   on your PATH (`claude.cmd` on Windows) and the project's Python environment —
-  `erdStudio.sqlmesh.pythonPath`'s directory, then `.venv`/`venv`/`env` — is put
-  first on the PATH it inherits, so the `sqlmesh` it validates with is the
-  project's own. Other assistants can read the same plan and the installed ERD
+  `erdStudio.sqlmesh.pythonPath`'s directory, or `.venv`/`venv`/`env` when unset — is put
+  first on the PATH it inherits. `VIRTUAL_ENV` points at that selected environment
+  only when it has `pyvenv.cfg`; otherwise inherited virtualenv variables are cleared.
+  Other assistants can read the same plan and the installed ERD
   Studio harness. Source edits support SQL model files: declarations,
   projections and the FK/uniqueness audit convention. The assistant must verify
   hashes, preserve model logic/kind, validate locally, and refresh/compare afterward.

@@ -53,6 +53,32 @@ function columnStatus(sourceType: string, targetType: string) {
 // ---------------------------------------------------------------------------
 
 describe('DiscrepancyService.compare', () => {
+  describe('case-distinct relationship endpoints', () => {
+    const model = (columns: string[]) => ({ ...makeModel('orders', columns.map(c => makeColumn(c))), identifierFolding: 'upper' as const });
+    const edge = (column: string) => makeRel(['orders', column], ['customers', 'id']);
+    const logical = () => makeDomain({ models: [model(['id']), makeModel('customers', [makeColumn('id')])], relationships: [edge('id')] });
+    const physical = (columns: string[]) => makeDomain({ stage: 'physical', models: [model(['ID', 'id']), makeModel('customers', [makeColumn('id')])], relationships: columns.map(edge) });
+
+    it.each([false, true])('claims an edge only once (reverse=%s)', reverse => {
+      const [source, target] = reverse ? [physical(['ID', 'id']), logical()] : [logical(), physical(['ID', 'id'])];
+      const report = compare(source, target);
+      expect(report.relationships).toHaveLength(2);
+      expect(report.relationships.find(r => r.fromColumn === 'id')?.status).toBe('matched');
+      expect(report.relationships.find(r => r.fromColumn === 'ID')?.status).toBe(reverse ? 'extra' : 'missing');
+    });
+
+    it('does not fold an edge onto the wrong column when the exact column has no edge', () => {
+      const report = compare(logical(), physical(['ID']));
+      expect(report.relationships.map(r => [r.fromColumn, r.status])).toEqual([['id', 'extra'], ['ID', 'missing']]);
+    });
+
+    it('compares cardinality against the exact sibling regardless of edge order', () => {
+      const p = physical(['id', 'ID']);
+      p.relationships[1].cardinality = 'one-to-one';
+      expect(compare(logical(), p).relationships.map(r => r.status)).toEqual(['matched', 'missing']);
+    });
+  });
+
   describe('model matching', () => {
     it('reports all models as matched when both domains have the same models', () => {
       const source = makeDomain({ models: [makeModel('dim_customer'), makeModel('fct_orders')] });

@@ -125,6 +125,7 @@ it('launches native source guidance only after a current plan is reviewed', asyn
   const launch = vi.spyOn(vscode.window, 'createTerminal');
   // A project venv: the assistant must see it first on PATH, as a shell activation would arrange.
   fs.mkdirSync(path.join(root, '.venv', 'bin'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.venv', 'pyvenv.cfg'), 'home = /usr/bin\n');
   try {
     await panel._simulateMessage({ type: 'launchClaudeSync' });
     expect(error()).toBeUndefined();

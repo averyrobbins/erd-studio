@@ -12,6 +12,12 @@ heading — `## Unreleased — 1.0.0` — and the workflow releases exactly that
 
 ### Fixed
 
+- **SQLMesh comparison and observations:** relationships, warehouse column types
+  and design key badges use one-to-one identifier matching, preserving distinct
+  quoted columns instead of folding them into the same edge or column.
+- **SQLMesh assistant environment:** a configured interpreter no longer borrows
+  another virtualenv's `VIRTUAL_ENV` or adds that environment to its command path.
+
 - **SQLMesh column identity:** import and sync now reject columns that would
   collide or become uneditable in the logical design, including distinct `ID`
   and quoted `"id"`. Physical view stays available, and uniqueness evidence for
