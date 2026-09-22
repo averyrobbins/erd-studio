@@ -4,7 +4,11 @@ import { isSqlmeshSourceInput, sqlmeshWatchPatterns } from '../../src/services/s
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
-const deferred = () => { let resolve!: () => void; const promise = new Promise<void>(r => { resolve = r; }); return { promise, resolve }; };
+const deferred = () => {
+  let resolve!: () => void, reject!: (error: Error) => void;
+  const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+};
 
 it('requires opt-in and coalesces a save burst into one export', async () => {
   let enabled = false;
@@ -26,7 +30,7 @@ it('serializes changes during a running export and retries once with the latest 
   queue.changed(); await vi.advanceTimersByTimeAsync(1000);
   queue.changed(); queue.changed(); await vi.advanceTimersByTimeAsync(2000);
   expect(refresh).toHaveBeenCalledTimes(1);
-  await expect(queue.run(async () => undefined)).rejects.toThrow('already running');
+  await expect(queue.run(async () => undefined, true)).rejects.toThrow('already running');
   first.resolve(); await vi.advanceTimersByTimeAsync(1000);
   expect(refresh).toHaveBeenCalledTimes(2);
   queue.dispose();
@@ -39,6 +43,76 @@ it('an explicit refresh supersedes a pending automatic refresh', async () => {
   await queue.run(async () => 'manual');
   await vi.advanceTimersByTimeAsync(2000);
   expect(refresh).not.toHaveBeenCalled();
+  queue.dispose();
+});
+
+it.each([false, true])('an explicit refresh supersedes a running automatic export and owns its slot (pending=%s)', async pending => {
+  const automatic = deferred(), manual = deferred();
+  const refresh = vi.fn().mockReturnValueOnce(automatic.promise).mockResolvedValue(undefined);
+  const onError = vi.fn();
+  const queue = new SqlmeshRefreshCoordinator({ enabled: () => true, refresh, onError });
+  queue.changed(); await vi.advanceTimersByTimeAsync(1000);
+  if (pending) queue.changed();
+  const action = vi.fn().mockReturnValue(manual.promise);
+  const explicit = queue.run(action);
+  expect(refresh.mock.calls[0][0].aborted).toBe(true);
+  expect(action).not.toHaveBeenCalled(); // The previous exporter must settle first.
+  await expect(queue.run(async () => {})).rejects.toThrow('already running');
+  automatic.reject(new Error('cancelled'));
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(action).toHaveBeenCalledTimes(1);
+  expect(action.mock.calls[0][0].aborted).toBe(false);
+  expect(onError).not.toHaveBeenCalled();
+  expect(refresh).toHaveBeenCalledTimes(1);
+  await expect(queue.run(async () => {})).rejects.toThrow('already running');
+  manual.resolve(); await explicit;
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(refresh).toHaveBeenCalledTimes(1); // Superseded pending work is consumed.
+  queue.dispose();
+});
+
+it('coalesces new source changes during an explicit takeover into one later automatic export', async () => {
+  const automatic = deferred(), manual = deferred();
+  const refresh = vi.fn().mockReturnValueOnce(automatic.promise).mockResolvedValue(undefined);
+  const queue = new SqlmeshRefreshCoordinator({ enabled: () => true, refresh, onError: vi.fn() });
+  queue.changed(); await vi.advanceTimersByTimeAsync(1000);
+  const explicit = queue.run(() => manual.promise);
+  queue.changed(); queue.changed();
+  automatic.resolve(); await vi.advanceTimersByTimeAsync(2000);
+  expect(refresh).toHaveBeenCalledTimes(1);
+  manual.resolve(); await explicit;
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(refresh).toHaveBeenCalledTimes(2);
+  queue.dispose();
+});
+
+it.each(['dispose', 'cancel'] as const)('does not start an explicit takeover after %s while the automatic export settles', async stop => {
+  const automatic = deferred();
+  const refresh = vi.fn().mockReturnValue(automatic.promise);
+  const onError = vi.fn();
+  const queue = new SqlmeshRefreshCoordinator({ enabled: () => true, refresh, onError });
+  queue.changed(); await vi.advanceTimersByTimeAsync(1000);
+  const action = vi.fn().mockResolvedValue(undefined);
+  const controller = new AbortController();
+  const explicit = queue.run(action, false, controller.signal);
+  const rejected = expect(explicit).rejects.toThrow(stop === 'dispose' ? 'closed' : 'cancelled');
+  if (stop === 'dispose') queue.dispose();
+  else controller.abort();
+  automatic.reject(new Error('cancelled'));
+  await rejected;
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(action).not.toHaveBeenCalled();
+  expect(refresh).toHaveBeenCalledTimes(1);
+  expect(onError).not.toHaveBeenCalled();
+  queue.dispose();
+});
+
+it('rejects overlapping explicit operations', async () => {
+  const pending = deferred();
+  const queue = new SqlmeshRefreshCoordinator({ enabled: () => true, refresh: vi.fn(), onError: vi.fn() });
+  const first = queue.run(() => pending.promise);
+  await expect(queue.run(async () => {})).rejects.toThrow('already running');
+  pending.resolve(); await first;
   queue.dispose();
 });
 

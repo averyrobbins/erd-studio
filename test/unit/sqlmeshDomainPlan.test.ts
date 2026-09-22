@@ -29,10 +29,10 @@ it.each(['dev; command', '--auto-apply', ''])('rejects an invalid environment %s
   expect(() => buildSqlmeshDomainPlan({ ...options, environment })).toThrow('environment name');
 });
 
-it('does not interpret selector operators embedded in an identifier', () => {
+it.each(['*', '+', '&', '|', '^', '(', ')', '[', ']', '{', '}', ':', ' ', '\t', '\n'])('rejects selector syntax or whitespace %j embedded in an identifier with actionable guidance', token => {
   const changed = structuredClone(snapshot);
-  changed.models.find(m => m.name === 'fct_order')!.id = '"db"."analytics"."order*"';
-  expect(() => buildSqlmeshDomainPlan({ ...options, snapshot: changed })).toThrow('selector operators');
+  changed.models.find(m => m.name === 'fct_order')!.id = `"db"."analytics"."order${token}note"`;
+  expect(() => buildSqlmeshDomainPlan({ ...options, snapshot: changed })).toThrow('select it manually in SQLMesh');
 });
 
 it('omits external models and rejects domains with no managed models', () => {

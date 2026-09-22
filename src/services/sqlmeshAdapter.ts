@@ -368,7 +368,8 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
         existing.description ||= observation.description;
       }
       columns.push(...observationMatches.unmatchedTarget.map(c => ({ ...c })));
-      if (hasBindings(actual)) assertLogicalColumnMapping(actual.name, columns, folding, actual.columnBindings);
+      // Keep warehouse drift visible even when it cannot be written into the
+      // logical schema. Import and sync validate mappings on their write paths.
       const displayColumns = columns.map(c => ({ ...c, name: displayName(actual, c.name),
         ...(hasBindings(actual) ? { nativeName: c.name } : {}) }));
       const displayFolding = hasBindings(actual) ? 'exact' as const : folding;

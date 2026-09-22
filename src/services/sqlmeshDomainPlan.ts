@@ -13,8 +13,8 @@ export function buildSqlmeshDomainPlan(options: {
     const model = snapshot.models.find(m => m.name === logical.name);
     if (!model) throw new Error(`Domain model ${logical.name} has no current SQLMesh binding. Create/bind it and refresh first.`);
     // SQLMesh selectors are a language. Literal identifiers containing selector
-    // operators must not accidentally expand this domain to unrelated models.
-    if (/[*+&|^()[\]{}]/.test(model.id)) throw new Error(`Model ${logical.name} contains SQLMesh selector operators; select it manually in SQLMesh.`);
+    // operators or whitespace can expand the selection or fail to parse.
+    if (/[*+&|^()[\]{}:\s]/.test(model.id)) throw new Error(`Model ${logical.name} contains SQLMesh selector operators or whitespace; select it manually in SQLMesh.`);
     return model.kind === 'EXTERNAL' ? undefined : model.id;
   }).filter((id): id is string => !!id))].sort();
   if (!modelIds.length) throw new Error('The domain has no managed SQLMesh models to plan.');

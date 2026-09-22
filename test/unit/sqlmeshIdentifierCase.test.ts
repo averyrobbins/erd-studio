@@ -296,6 +296,42 @@ it.each(['logical', 'physical'] as const)('syncs a bound identifier from the %s 
   expect(source.columns[0]).toMatchObject({ columnName: 'order_key', resolvedDataType: 'BIGINT' });
 });
 
+it.each(['logical', 'physical'] as const)('shows unrepresentable warehouse drift on a bound model in the %s comparison but refuses sync', async stage => {
+  const { unified, physical, logical, data } = await boundStages();
+  logical.models.find(m => m.name === 'fct_order')!.columns.find(c => c.name === 'amount')!.dataType = 'TEXT';
+  const snapshot = adapter.getSnapshot()!;
+  const reportFor = (physical: DisplayDomain) => stage === 'logical' ? compare(logical, physical) : compare(physical, logical);
+  const options = { snapshot, domainPath, semanticDir: '.erd-studio', preconditions: {} };
+  const earlierPlan = buildSqlmeshSyncPlan({ ...options, report: reportFor(physical),
+    selections: { [columnKey('fct_order', 'amount')]: 'physical' } });
+  snapshot.warehouse = { environment: 'dev', observedAt: new Date().toISOString(), models: snapshot.models.map(m => ({
+    id: m.id, status: m.name === 'fct_order' ? 'observed' : 'unavailable',
+    relation: m.name === 'fct_order' ? '"db"."schema"."orders"' : null,
+    columns: m.name === 'fct_order' ? [{ name: 'Order Note', dataType: 'TEXT', description: 'Warehouse drift' }] : [],
+  })) };
+
+  const drifted = adapter.buildPhysical(unified, data);
+  expect(drifted.readOnly).toBe(true);
+  expect(drifted.models.find(m => m.name === 'fct_order')!.columns).toContainEqual(expect.objectContaining({
+    name: 'order note', nativeName: 'Order Note', dataType: 'TEXT', description: 'Warehouse drift',
+  }));
+  const report = reportFor(drifted);
+  expect(report.models.find(m => m.name === 'fct_order')!.columns.find(c => c.name === 'order note')!.status)
+    .toBe(stage === 'logical' ? 'missing' : 'extra');
+  expect(() => buildSqlmeshSyncPlan({ ...options, report,
+    selections: { [columnKey('fct_order', 'order note')]: 'physical' } })).toThrow('logical naming rules');
+  const before = structuredClone(unified);
+  expect(() => applySqlmeshLogicalPlan(earlierPlan, unified, drifted)).toThrow('logical naming rules');
+  expect(unified).toEqual(before);
+});
+
+it('keeps bound source import guards when a source column cannot be represented logically', async () => {
+  await boundStages();
+  adapter.getModel('fct_order')!.columns.push({ name: 'Order Note', dataType: 'TEXT', description: '' });
+  expect(() => adapter.assertWritableModel('fct_order')).toThrow('logical naming rules');
+  expect(() => adapter.seedModel('fct_order')).toThrow('logical naming rules');
+});
+
 it.each([
   { bad: 'MISSING' }, { a: 'ORDER_ID', b: 'ORDER_ID' }, { 'Bad Alias': 'ORDER_ID' }, { amount: 'ORDER_ID' },
 ])('refuses malformed, dangling, or colliding bindings %j', async columnBindings => {

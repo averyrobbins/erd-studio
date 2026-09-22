@@ -1,6 +1,7 @@
 # SQLMesh parity — current status
 
-Core workflow near parity, implemented through **2ba5690** on `sqlmesh-integration`.
+Core workflow near parity on `sqlmesh-integration`; the implementation baseline is
+**2ba5690**, followed by the review corrections recorded below.
 The accepted steps 1–5 were pursued in order with disposable projects and local
 validation. This is a development preview, not a claim of universal dbt/SQLMesh parity.
 
@@ -32,6 +33,28 @@ validation. This is a development preview, not a claim of universal dbt/SQLMesh 
   Python 3.13.15; disposable PostgreSQL 17.11 loopback TCP acceptance.
 - No worktrees, PR, release, production deployment or deliberate GitHub Actions run.
 
+## Review follow-up (2026-09-22)
+
+Reviewed the five corrections against **420f267** and independently reran local
+checks before committing. Physical viewing now tolerates unrepresentable observed
+columns while import/sync guards remain; domain-plan artifacts no longer invalidate
+sync or refresh canvases; environment/timeout settings preserve observations;
+explicit refresh cancels automatic work and waits for cleanup before taking its
+slot; selector punctuation/whitespace gets manual-selection guidance.
+
+Latest validation: **1,745 JavaScript tests / 76 files**, compile, **26 Python passed
+and 5 PostgreSQL skipped** (31 discovered), **13 MCP checks**, **9 SQLMesh + 2 dbt
+real-host checks**, and production VSIX packaging. PostgreSQL was not restarted or
+retested during this follow-up; the earlier five successful cases remain historical
+acceptance evidence. Harness versions and schema content are unchanged.
+
+Known display follow-up: a warehouse-only native column can fold onto an existing
+logical alias (for example, binding `order_note: amount` plus observed `ORDER_NOTE`).
+Physical can show two `order_note` rows with distinct `nativeName` values. The view
+remains available and sync refuses the collision. Give conflicting observed rows
+an explicit native identity/label without weakening write guards; this was left
+outside the five reviewed fixes.
+
 ## Remaining limitations and next decisions
 
 | Area | Boundary / next step |
@@ -43,6 +66,7 @@ validation. This is a development preview, not a claim of universal dbt/SQLMesh 
 | Freshness | Standard local input hashes; external imports, environment variables, remote inputs and warehouse changes require explicit refresh/inspection. |
 | Portability | Windows/macOS, other SQLMesh versions, production scale and cloud TLS/authentication remain unverified. |
 
-Recommended next step: independent review using [handoff 12](sqlmesh-review-handoff-12-near-parity.md),
-then a pilot on a representative native SQLMesh project. Choose composite relationships
-or a concrete warehouse engine after that review. No additional deployment is implied.
+Recommended next step: resolve the observed-column display ambiguity, then pilot
+on a representative native SQLMesh project. The review begun with
+[handoff 12](sqlmesh-review-handoff-12-near-parity.md) is covered above. Choose tuple
+relationships or another warehouse engine after the pilot. No deployment is implied.

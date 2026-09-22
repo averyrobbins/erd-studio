@@ -155,6 +155,22 @@ it('generates native source context and blocks ambiguous, unknown-type, mixed an
   expect(() => plan({ [key]: 'logical' })).toThrow('manual workflow');
 });
 
+it('keeps a prepared source plan current across plan artifact creation, replacement and deletion', async () => {
+  const { logical, options, plan } = await setup();
+  logical.models[0].columns[0].dataType = 'TEXT';
+  const prepared = plan({ [columnKey('dim_customer', logical.models[0].columns[0].name)]: 'logical' });
+  for (const name of ['sqlmesh-domain-plan.json', '.sync-plan.json']) {
+    const file = path.join(root, '.erd-studio', name);
+    for (const content of ['{}', '{"revision":2}', null]) {
+      if (content === null) fs.unlinkSync(file);
+      else fs.writeFileSync(file, content);
+      const current = captureSqlmeshInputs(root, '.erd-studio', options.snapshot, domainPath);
+      expect(current).toEqual(options.preconditions);
+      expect(() => assertSqlmeshPlanCurrent(prepared, current)).not.toThrow();
+    }
+  }
+});
+
 it('detects changed exports, source or shared logical files and newly added domain files', async () => {
   const { logical, options, plan } = await setup();
   logical.models[0].columns[0].dataType = 'TEXT';

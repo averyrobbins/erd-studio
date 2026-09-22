@@ -12,6 +12,18 @@ heading — `## Unreleased — 1.0.0` — and the workflow releases exactly that
 
 ### Fixed
 
+- **SQLMesh model selection:** identifiers containing colons or whitespace now
+  receive manual-selection guidance before launching the domain planner.
+- **SQLMesh explicit refresh:** Refresh Project Metadata and Inspect SQLMesh
+  Warehouse cancel an in-progress automatic export and run after its cleanup,
+  instead of reporting that a background refresh is already running.
+- **SQLMesh inspection settings:** changing the selected environment or export
+  timeout no longer schedules a source export that clears warehouse observations.
+- **SQLMesh plan artifacts:** preparing a domain plan no longer invalidates a
+  prepared sync plan or refreshes open canvases.
+- **SQLMesh warehouse drift:** Physical view and comparisons stay available when
+  a bound model has warehouse-only columns outside the logical naming rules.
+  Import and sync continue to reject identifiers the logical design cannot represent.
 - **SQLMesh model lifecycle:** explicitly bound logical models can prepare assisted
   native SQL creation; models absent from source can detach from a domain in one
   undoable edit while preserving shared definitions and other domains.

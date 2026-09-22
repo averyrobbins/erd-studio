@@ -568,9 +568,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   if (projectProvider === 'sqlmesh') {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const changed = (uri: vscode.Uri) => {
+      const relative = path.relative(workspaceRoot, uri.fsPath).split(path.sep).join('/');
+      if (relative === `${semanticDir}/sqlmesh-domain-plan.json`) return;
       clearTimeout(timer);
       timer = setTimeout(() => { projectAdapter.invalidate(); void editorProvider.refreshAllOpenDomains(); }, 300);
-      const relative = path.relative(workspaceRoot, uri.fsPath).split(path.sep).join('/');
       // Export/plan/logical-file changes never cause an exporter loop. Source
       // execution is opt-in and checked again after the debounce and in trust.
       if (isSqlmeshSourceInput(relative, semanticDir)) sqlmeshRefreshCoordinator.changed();
@@ -581,7 +582,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     context.subscriptions.push({ dispose() { clearTimeout(timer); } },
       vscode.workspace.onDidChangeConfiguration(event => {
-        if (!event.affectsConfiguration('erdStudio.sqlmesh')) return;
+        if (!['autoRefresh', 'pythonPath', 'gateway', 'config']
+          .some(setting => event.affectsConfiguration(`erdStudio.sqlmesh.${setting}`))) return;
         sqlmeshRefreshCoordinator.disableAutomatic();
         sqlmeshRefreshCoordinator.changed();
       }));

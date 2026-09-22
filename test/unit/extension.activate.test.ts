@@ -21,6 +21,9 @@ import * as vscode from 'vscode';
 
 import { activate, NO_LEGACY_ALIAS } from '../../src/extension';
 import { DOMAIN_EDITOR_VIEW_TYPE } from '../../src/services/recoveryService';
+import { SqlmeshProjectAdapter } from '../../src/services/sqlmeshAdapter';
+import { SqlmeshRefreshCoordinator } from '../../src/services/sqlmeshAutoRefresh';
+import * as sqlmeshRefresh from '../../src/services/sqlmeshRefresh';
 import type { SemanticEditorProvider } from '../../src/providers/SemanticEditorProvider';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -363,6 +366,56 @@ describe('activate() project-root resolution', () => {
 
 
 describe('activate() with a native SQLMesh project', () => {
+  it.each([
+    ['autoRefresh', true], ['pythonPath', true], ['gateway', true], ['config', true],
+    ['environment', false], ['exportTimeoutSeconds', false],
+  ])('only reschedules an automatic export when sqlmesh.%s changes if it affects the export', async (setting, triggersExport) => {
+    fs.cpSync(path.join(REPO_ROOT, 'test/fixtures/sqlmesh-project'), root, { recursive: true });
+    openWorkspace(root);
+    vscode._setMockConfiguration('erdStudio', 'sqlmesh.autoRefresh', { globalValue: true });
+    const listeners: Array<(event: vscode.ConfigurationChangeEvent) => unknown> = [];
+    vi.spyOn(vscode.workspace, 'onDidChangeConfiguration').mockImplementation(listener => {
+      listeners.push(listener);
+      return { dispose() {} };
+    });
+    const disable = vi.spyOn(SqlmeshRefreshCoordinator.prototype, 'disableAutomatic');
+    const exporter = vi.spyOn(sqlmeshRefresh, 'refreshSqlmesh').mockResolvedValue('');
+    await activate(context);
+    const changed = `erdStudio.sqlmesh.${setting}`;
+    for (const listener of listeners) listener({ affectsConfiguration: section => changed === section || changed.startsWith(`${section}.`) });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(disable).toHaveBeenCalledTimes(triggersExport ? 1 : 0);
+    expect(exporter).toHaveBeenCalledTimes(triggersExport ? 1 : 0);
+  });
+
+  it.each(['.erd-studio', 'docs/erd'])('ignores domain-plan watcher events under %s without delaying metadata refreshes', async semanticDir => {
+    fs.cpSync(path.join(REPO_ROOT, 'test/fixtures/sqlmesh-project'), root, { recursive: true });
+    if (semanticDir !== '.erd-studio') {
+      fs.mkdirSync(path.dirname(path.join(root, semanticDir)), { recursive: true });
+      fs.renameSync(path.join(root, '.erd-studio'), path.join(root, semanticDir));
+    }
+    vscode._setMockConfiguration('erdStudio', 'semanticDir', { workspaceValue: semanticDir });
+    openWorkspace(root);
+    const registerEditor = vi.spyOn(vscode.window, 'registerCustomEditorProvider');
+    await activate(context);
+    const editor = registerEditor.mock.calls[0][1] as unknown as SemanticEditorProvider;
+    const refresh = vi.spyOn(editor, 'refreshAllOpenDomains').mockResolvedValue();
+    const invalidate = vi.spyOn(SqlmeshProjectAdapter.prototype, 'invalidate');
+    const watcher = vscode._mockFileWatchers.find(w => (w._pattern as vscode.RelativePattern).pattern === `${semanticDir}/sqlmesh*.json`)!;
+    const planUri = vscode.Uri.file(path.join(root, semanticDir, 'sqlmesh-domain-plan.json'));
+    watcher._simulateCreate(planUri); watcher._simulateChange(planUri); watcher._simulateDelete(planUri);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+
+    watcher._simulateChange(vscode.Uri.file(path.join(root, semanticDir, 'sqlmesh.json')));
+    await vi.advanceTimersByTimeAsync(100);
+    watcher._simulateChange(planUri);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
   it.each([false, true])('prepares a domain command and rejects changes during review (changed=%s)', async changed => {
     fs.cpSync(path.join(REPO_ROOT, 'test/fixtures/sqlmesh-project'), root, { recursive: true });
     openWorkspace(root);

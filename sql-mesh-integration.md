@@ -111,5 +111,8 @@ equivalent. Native source deletion requires consumer/history review; Python/gene
 seed and external source editing remain manual. Other warehouse engines, custom
 loaders, multiple gateways, Windows/macOS, cloud TLS/authentication and production
 scale are unverified. Metadata sync never implies deployment or successful audits.
-The next useful step is independent review of the tested integration, then choose
-one of these bounded extensions against a real target project.
+The independent review follow-up corrected five issues and passes 1,745 JS tests,
+26 Python tests (five PostgreSQL cases skipped), 13 MCP checks and 11 host checks.
+An observed-only column can still share a displayed logical alias with a bound
+source column; write paths reject that collision. The next step is to distinguish
+those rows visibly and pilot the integration against a representative native project.

@@ -95,7 +95,8 @@ export function captureSqlmeshInputs(root: string, semanticDir: string, snapshot
     for (const entry of fs.readdirSync(path.join(root, relative), { withFileTypes: true })) {
       const file = `${relative}/${entry.name}`;
       if (entry.isDirectory()) visit(file);
-      else if (/\.(json|ya?ml)$/.test(entry.name) && entry.name !== '.sync-plan.json') files.add(file);
+      else if (/\.(json|ya?ml)$/.test(entry.name)
+        && entry.name !== '.sync-plan.json' && entry.name !== 'sqlmesh-domain-plan.json') files.add(file);
     }
   };
   visit(semanticDir);
