@@ -29,7 +29,8 @@ export interface SqlmeshSyncPlan {
   direction: 'metadata-to-logical' | 'logical-to-source';
   sourceStage: 'logical' | 'physical';
   metadata: { generatedAt: string; sqlmeshVersion: string; gateway: string | null; config: string | null; environment: string | null; observedAt: string | null };
-  modelContext: Record<string, { modelId: string; sourcePath: string | null; logicalModelPath: string; kind: string; dialect: string }>;
+  modelContext: Record<string, { modelId: string; sourcePath: string | null; logicalModelPath: string; kind: string; dialect: string;
+    columnNames?: Record<string, string> }>;
   columns: ColumnResolution[];
   relationships: Array<RelationshipResolution & { resolvedCardinality?: Relationship['cardinality'] }>;
   /** Preimages include the export, source files, bindings and shared logical definitions. */
@@ -43,6 +44,7 @@ export interface SqlmeshSyncPlan {
 export const SQLMESH_SYNC_INSTRUCTIONS = [
   'This is a native SQLMesh plan. Never execute it with a dbt action guide. Do not edit sqlmesh.json.',
   'Before editing, verify every preconditions SHA-256 against the current project bytes. Abort and regenerate on changed or missing files. Use the modelContext canonical modelId and sourcePath, never guessed basenames or physical snapshot names.',
+  'modelContext.columnNames maps logical aliases to exact native column identifiers. Resolve selected column and relationship endpoints through that map before editing SQL or audits, preserving required quoting. Do not rename source columns to their logical aliases. If removing a bound column, remove its explicit column binding in sqlmesh-bindings.json in the same change, then refresh.',
   'metadata-to-logical plans are applied by the editor. For logical-to-source, edit only the selected native SQL MODEL definitions, SQL projections and audits. Preserve existing logic, grain, incremental kind, time columns, partitions and other audits.',
   'Use each column resolvedDataType, not the stage-relative types. Adding a column needs a real expression grounded in the project; ask the user if the expression or backfill semantics cannot be determined. Never fabricate data or silently append NULL placeholders.',
   'Relationship actions mean erd_relationship(column := ..., to := qualified_model, field := ...) audits, with unfiltered unique_values or unique_combination_of_columns only when justified. The parent must be a dependency of the child: SQLMesh builds its DAG from the query, not from audits, so when the child query does not select from the parent add depends_on (qualified_model) to the child MODEL — otherwise the audit can run before the parent table exists and a fresh deployment fails. Do not turn grain, lineage or references into enforced keys. Review all consumers before changing shared uniqueness audits.',
@@ -126,13 +128,14 @@ export function buildSqlmeshSyncPlan(options: {
   for (const name of names) {
     const m = snapshot.models.find(model => model.name === name);
     if (!m) throw new Error(`Missing SQLMesh binding for ${name}. Refresh metadata after binding this model.`);
-    assertLogicalColumnMapping(name, m.columns, m.identifierFolding ?? 'exact');
+    assertLogicalColumnMapping(name, m.columns, m.identifierFolding ?? 'exact', m.columnBindings);
     const observed = snapshot.warehouse?.models.find(model => model.id === m.id);
-    if (observed?.status === 'observed') assertLogicalColumnMapping(name, observed.columns, m.identifierFolding ?? 'exact');
+    if (observed?.status === 'observed') assertLogicalColumnMapping(name, observed.columns, m.identifierFolding ?? 'exact', m.columnBindings);
     if (direction === 'logical-to-source' && (!m.sourcePath?.endsWith('.sql') || ['SEED', 'EXTERNAL', 'EMBEDDED'].includes(m.kind))) {
       throw new Error(`Source edits for ${name} (${m.kind}) need a manual workflow; this sync supports SQL model files.`);
     }
     modelContext[name] = { modelId: m.id, sourcePath: m.sourcePath, kind: m.kind, dialect: m.dialect,
+      columnNames: Object.fromEntries(m.columns.map(c => [logicalSpelling(c.name, m.identifierFolding ?? 'exact', m.columnBindings), c.name])),
       logicalModelPath: `${semanticDir}/logical-models/${name}.yml` };
   }
   return { schemaVersion: 1, provider: 'sqlmesh', id: randomUUID(), generatedAt: new Date().toISOString(),

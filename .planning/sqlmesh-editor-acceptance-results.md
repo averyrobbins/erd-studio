@@ -58,3 +58,14 @@ The run validates one Linux/runtime combination and disposable DuckDB. It does
 not establish Windows/macOS behavior, production-scale performance, arbitrary
 custom loaders, or general SQL rewrite correctness. Assistant edits still need
 grounded expressions and review; metadata refresh and sync do not deploy models.
+
+## Column-binding follow-up
+
+The updated VSIX imported `bound_names`, whose source projects `"Order Number"`
+(SQLMesh exports `order number` on DuckDB), as logical `order_number`. Both
+stages retain the native-name hint. Changing the logical type and preparing a
+source plan produced `columnNames: {"order_number": "order number"}` and the
+correct native source path. Case-distinct sibling and relationship mappings are
+covered by adapter/provider tests; MCP smoke checks retain native identifiers.
+The run exposed stale sync selections after a changed comparison; the store now
+clears selections and the prepared plan only when the report changes.

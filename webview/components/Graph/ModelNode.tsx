@@ -466,7 +466,7 @@ function ColumnRow({ column, modelName, readOnly, existingColumnNames, discrepan
       ) : (
         <span
           className={`model-node__col-name${!readOnly ? ' model-node__col-name--editable' : ''}`}
-          title={column.name}
+          title={column.nativeName ? `${column.name} → ${column.nativeName} (SQLMesh identifier)` : column.name}
           onDoubleClick={!readOnly ? handleDoubleClickName : undefined}
         >
           {column.name}

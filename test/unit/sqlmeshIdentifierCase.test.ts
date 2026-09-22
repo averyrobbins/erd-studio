@@ -244,3 +244,76 @@ it.each([false, true])('retains observed case siblings without order-dependent t
   expect(columns.find(c => c.name === 'AMOUNT')?.dataType).toBe('VARCHAR');
   expect(columns.find(c => c.name === 'amount')?.dataType).toBe('BIGINT');
 });
+
+async function boundStages() {
+  makeSnowflake(s => {
+    const order = s.models.find((m: any) => m.name === 'fct_order');
+    order.columns.push({ name: 'order_id', dataType: 'VARCHAR', description: 'quoted sibling' });
+    order.columnBindings = { order_key: 'ORDER_ID', quoted_key: 'order_id', customer_key: 'CUSTOMER_ID' };
+    s.models.find((m: any) => m.name === 'dim_customer').columnBindings = { customer_key: 'CUSTOMER_ID' };
+  });
+  const data = await adapter.load();
+  const unified = domains.getDomain(path.join(root, domainPath));
+  unified.logical.models = unified.logical.models.map(m => adapter.seedModel(m.name)!);
+  unified.logical.models.find(m => m.name === 'fct_order')!.columns!.find(c => c.name === 'order_key')!.isPrimaryKey = true;
+  unified.logical.relationships = [{ fromModel: 'fct_order', fromColumn: 'customer_key', toModel: 'dim_customer', toColumn: 'customer_key', cardinality: 'many-to-one' }];
+  const physical = adapter.buildPhysical(unified, data);
+  const logical: DisplayDomain = { ...physical, stage: 'logical', relationships: unified.logical.relationships,
+    models: unified.logical.models.map(m => ({ name: m.name, schema: m.schema ?? '', description: '',
+      columns: m.columns!.map(c => ({ ...c, description: c.description ?? '', isPrimaryKey: !!c.isPrimaryKey, isForeignKey: false, isNaturalKey: false })) })) };
+  return { unified, physical, logical, data };
+}
+
+it('uses explicit aliases for case siblings, design badges, imports and relationship evidence', async () => {
+  const { physical, logical, data } = await boundStages();
+  const model = physical.models.find(m => m.name === 'fct_order')!;
+  expect(model.identifierFolding).toBe('exact');
+  expect(model.columns.map(c => [c.name, c.nativeName, c.isPrimaryKey])).toEqual([
+    ['order_key', 'ORDER_ID', true], ['customer_key', 'CUSTOMER_ID', false], ['amount', 'AMOUNT', false], ['quoted_key', 'order_id', false],
+  ]);
+  for (const report of [compare(physical, logical), compare(logical, physical)]) {
+    expect(report.models.flatMap(m => m.columns).every(c => c.status === 'matched')).toBe(true);
+    expect(report.relationships.map(r => r.status)).toEqual(['matched']);
+  }
+  expect(data.manifest.relationshipTests[0]).toMatchObject({ fromColumn: 'customer_key', toColumn: 'customer_key' });
+  expect(adapter.relationshipCardinality('fct_order', 'order_key', 'dim_customer', 'customer_key')).toBe('one-to-one');
+  expect(adapter.relationshipCardinality('fct_order', 'quoted_key', 'dim_customer', 'customer_key')).toBe('many-to-one');
+});
+
+it.each(['logical', 'physical'] as const)('syncs a bound identifier from the %s comparison without touching its sibling', async stage => {
+  const { unified, physical, logical } = await boundStages();
+  logical.models.find(m => m.name === 'fct_order')!.columns.find(c => c.name === 'order_key')!.dataType = 'BIGINT';
+  unified.logical.models.find(m => m.name === 'fct_order')!.columns!.find(c => c.name === 'order_key')!.dataType = 'BIGINT';
+  const report = stage === 'logical' ? compare(logical, physical) : compare(physical, logical);
+  const options = { report, snapshot: adapter.getSnapshot()!, domainPath, semanticDir: '.erd-studio', preconditions: {} };
+  const key = columnKey('fct_order', 'order_key');
+  const plan = buildSqlmeshSyncPlan({ ...options, selections: { [key]: 'physical' } });
+  const patch = applySqlmeshLogicalPlan(plan, unified, physical);
+  expect(patch.models[0].columns!.find(c => c.name === 'order_key')!.dataType).toBe('INT');
+  expect(patch.models[0].columns!.find(c => c.name === 'quoted_key')!.dataType).toBe('VARCHAR');
+  const source = buildSqlmeshSyncPlan({ ...options, selections: { [key]: 'logical' } });
+  expect(source.modelContext.fct_order.columnNames).toEqual({ order_key: 'ORDER_ID', quoted_key: 'order_id', customer_key: 'CUSTOMER_ID', amount: 'AMOUNT' });
+  expect(source.columns[0]).toMatchObject({ columnName: 'order_key', resolvedDataType: 'BIGINT' });
+});
+
+it.each([
+  { bad: 'MISSING' }, { a: 'ORDER_ID', b: 'ORDER_ID' }, { 'Bad Alias': 'ORDER_ID' }, { amount: 'ORDER_ID' },
+])('refuses malformed, dangling, or colliding bindings %j', async columnBindings => {
+  makeSnowflake(s => { s.models.find((m: any) => m.name === 'fct_order').columnBindings = columnBindings; });
+  await adapter.load();
+  expect(adapter.status).toBe('invalid');
+  expect(adapter.getSnapshot()).toBeUndefined();
+});
+
+it('imports an exact identifier containing spaces using an explicit binding', async () => {
+  makeSnowflake(s => {
+    const model = s.models.find((m: any) => m.name === 'fct_order');
+    model.identifierFolding = 'exact';
+    model.columns = [{ name: 'Order Number', dataType: 'INT', description: 'Native identifier' }];
+    model.uniqueKeys = [];
+    model.columnBindings = { order_number: 'Order Number' };
+    s.relationships = [];
+  });
+  await adapter.load();
+  expect(adapter.seedModel('fct_order')?.columns).toEqual([{ name: 'order_number', dataType: 'INT', description: 'Native identifier' }]);
+});

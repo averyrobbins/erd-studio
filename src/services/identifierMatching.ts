@@ -33,28 +33,31 @@ export function sameIdentifier(a: string, b: string, folding: IdentifierFolding)
  * stays within `COLUMN_NAME_PATTERN` and still folds back to the physical
  * name), and the exact spelling where case is significant.
  */
-export function logicalSpelling(name: string, folding: IdentifierFolding): string {
+export function logicalSpelling(name: string, folding: IdentifierFolding, bindings?: Readonly<Record<string, string>>): string {
+  const alias = Object.entries(bindings ?? {}).find(([, native]) => native === name)?.[0];
+  if (alias !== undefined) return alias;
   return folding === 'exact' ? name : name.toLowerCase();
 }
 
 /**
  * A read-only comparison can retain identifiers the logical schema cannot
  * represent. Import and sync must stop before mapping them into an invalid
- * design or confusing two distinct columns. Column bindings are not supported
- * yet, so reject the affected model rather than guessing an alias.
+ * design or confusing two distinct columns. Explicit bindings take precedence
+ * over inferred spellings, and must still produce a one-to-one logical schema.
  */
 export function assertLogicalColumnMapping(
   modelName: string, columns: readonly { name: string }[], folding: IdentifierFolding,
+  bindings?: Readonly<Record<string, string>>,
 ): void {
   const mapped = new Map<string, string>();
   for (const column of columns) {
-    const name = logicalSpelling(column.name, folding);
+    const name = logicalSpelling(column.name, folding, bindings);
     if (!COLUMN_NAME_PATTERN.test(name)) {
-      throw new Error(`Cannot import or sync ${modelName}: column ${JSON.stringify(column.name)} cannot be represented by the logical naming rules. Use a manual workflow; explicit column bindings are not supported yet.`);
+      throw new Error(`Cannot import or sync ${modelName}: column ${JSON.stringify(column.name)} cannot be represented by the logical naming rules. Add explicit column bindings in sqlmesh-bindings.json and refresh.`);
     }
     const previous = mapped.get(name);
     if (previous !== undefined) {
-      throw new Error(`Cannot import or sync ${modelName}: columns ${JSON.stringify(previous)} and ${JSON.stringify(column.name)} collide as logical column ${JSON.stringify(name)}. Use a manual workflow; explicit column bindings are not supported yet.`);
+      throw new Error(`Cannot import or sync ${modelName}: columns ${JSON.stringify(previous)} and ${JSON.stringify(column.name)} collide as logical column ${JSON.stringify(name)}. Add explicit column bindings in sqlmesh-bindings.json and refresh.`);
     }
     mapped.set(name, column.name);
   }

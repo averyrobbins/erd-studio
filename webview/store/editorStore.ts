@@ -560,7 +560,14 @@ export const useEditorStore = create<EditorState & EditorActions>()((set) => ({
     ...(!visible ? { syncMode: false, syncSelections: {}, manifestStale: false, syncPlanGenerated: null } : {}),
   }),
   setDiscrepancyCompareStage: (stage) => set({ discrepancyCompareStage: stage }),
-  setDiscrepancyReport: (report) => set({ discrepancyReport: report }),
+  setDiscrepancyReport: (report) => set((state) => ({
+    discrepancyReport: report,
+    // A refreshed comparison may remove a difference or change its meaning.
+    // Never send old selections alongside the new report. Identical background
+    // refreshes retain the user's work and any already reviewed plan.
+    ...(JSON.stringify(state.discrepancyReport) !== JSON.stringify(report)
+      ? { syncSelections: {}, syncPlanGenerated: null } : {}),
+  })),
   setSyncMode: (active) => set({ syncMode: active, syncPlanGenerated: null }),
   setSyncSelection: (key, choice) =>
     set((state) => ({ syncSelections: { ...state.syncSelections, [key]: choice }, syncPlanGenerated: null })),

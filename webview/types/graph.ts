@@ -19,6 +19,7 @@ import type { PhysicalProvenance } from '../../src/types/display';
 /** Column data enriched with PK/FK/NK indicators for display in ModelNode. */
 export interface ColumnDisplay {
   name: string;
+  nativeName?: string;
   dataType: string;
   /** Column description (optional — shown in tooltip on hover). */
   description?: string;

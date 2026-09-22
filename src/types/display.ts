@@ -48,6 +48,8 @@ export interface ExistingModelPreview extends ManifestModelPreview {
 /** Column ready for webview display. */
 export interface DisplayColumn {
   name: string;
+  /** Exact source identifier when the display uses an explicit logical binding. */
+  nativeName?: string;
   dataType: string;
   description: string;
   isPrimaryKey: boolean;

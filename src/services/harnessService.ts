@@ -34,7 +34,7 @@ export const HARNESS_VERSION = '17';
  * `SQLMESH_SYNC_INSTRUCTIONS` change. A file's provider marker decides which
  * version it is compared against.
  */
-export const SQLMESH_HARNESS_VERSION = '2';
+export const SQLMESH_HARNESS_VERSION = '3';
 
 /** The harness version the given provider's generated files carry. */
 export function harnessVersionFor(provider: 'dbt' | 'sqlmesh'): string {
@@ -794,6 +794,13 @@ The exporter executes project configuration/macros but never plans or applies ch
 
 Logical aliases map to canonical SQLMesh names in .erd-studio/sqlmesh-bindings.json:
 {"version":1,"models":{"dim_customer":"analytics.dim_customer"}}
+Optional columns maps each logical model alias to safe logical column aliases and
+exact native names: {"columns":{"dim_customer":{"customer_key":"Customer ID"}}}.
+Merge this into the same version-1 bindings file. Values are identifier names,
+not SQL quoted expressions. Bindings must be one-to-one and cover any collisions
+or names outside the logical naming rules. Physical/MCP columns show the alias
+with nativeName retaining the exact source identifier. Never guess a folded alias
+when explicit bindings exist.
 After changing a binding or renaming a bound logical model, refresh the export.
 Preserve qualified model identities and the case of exported column names.
 

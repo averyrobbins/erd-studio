@@ -76,24 +76,37 @@ To match an existing logical model, create `.erd-studio/sqlmesh-bindings.json`:
 Refresh after editing bindings. Renaming a bound logical model requires updating
 its binding too. Bindings are one-to-one; changing the catalog changes identity.
 
-Column names are exported exactly as SQLMesh normalises them for the model's
-dialect (`customer_id` on DuckDB, `CUSTOMER_ID` on Snowflake, a quoted `"id"` as
-written), and each model records how its dialect folds unquoted identifiers
-(`identifierFolding`: `lower`, `upper` or `exact`, from SQLGlot's normalisation
-strategy). The logical design keeps typing columns lowercase: comparison
-pairs names exactly first and then by that folding, so a
-logical `customer_id` is the same column as Snowflake's `CUSTOMER_ID`, while a
-quoted `"id"` beside an unquoted `ID` stays a separate column. Whatever sync or
-import writes into the design takes the lowercase spelling wherever the engine
-folds case. Exports made before this field existed are matched exactly until
-refreshed; on case-sensitive dialects (ClickHouse, MySQL) an uppercase column
-name cannot be expressed in the design and is reported as a difference.
-Import and sync reject the affected model when distinct names would become the
-same logical name (for example `ID` and quoted `"id"`), or when a name cannot meet
-the logical naming rules. Both sync directions and automatically added relationships
-use this check before writing. Physical view remains available. Such models need a
-manual workflow until explicit column bindings are implemented; uniqueness evidence
-for one quoted column is never borrowed from its case-distinct sibling.
+Column names are exported exactly as SQLMesh normalizes them. Without explicit
+column bindings, comparison pairs exact names first and then unambiguous dialect
+folding (`lower`, `upper`, or `exact`). Import/sync refuse names that violate the
+logical lowercase naming rules or collapse distinct native columns.
+
+Add an optional `columns` object to the same binding file to handle these cases:
+
+```json
+{
+  "version": 1,
+  "models": {"orders": "analytics.orders"},
+  "columns": {
+    "orders": {"order_key": "ID", "quoted_key": "id", "total": "Order Total"}
+  }
+}
+```
+
+Each key is a safe logical alias; each value is the **exact name from the export**,
+without SQL quote delimiters. Unlisted columns keep their normal logical spelling.
+The complete resulting name set must be valid and one-to-one. Duplicate targets,
+unknown source columns/models, and collisions with implicit names fail refresh;
+fix the binding file and retry. Binding edits participate in freshness checks and
+invalidate previously prepared sync plans. Remove bindings when removing source
+columns and update them when renaming logical aliases.
+
+For bound models, Physical and MCP output use logical aliases consistently, with
+`nativeName` retaining the exact source identifier (shown on hover in either editor
+stage). Comparison uses exact aliases; source/warehouse matching still uses native
+identifiers. Both sync directions, imported relationships and uniqueness evidence
+use the same mapping. Source plans include `modelContext.columnNames`; assistants
+must resolve aliases through this map and preserve native SQL quoting.
 
 For a single-column FK, copy [erd_relationship.sql](audits/erd_relationship.sql)
 into your project's `audits/` folder and attach it to the child model:

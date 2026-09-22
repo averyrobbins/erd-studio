@@ -255,6 +255,16 @@ describe('editorStore FK dialog', () => {
 });
 
 describe('editorStore discrepancy and sync', () => {
+  it('keeps identical refreshes but drops selections and a plan when comparison changes', () => {
+    startSyncSession();
+    state().setDiscrepancyReport(structuredClone(report));
+    expect(state().syncSelections).toEqual({ 'model:dim_customer': 'logical' });
+    expect(state().syncPlanGenerated).not.toBeNull();
+    state().setDiscrepancyReport({ ...report, models: [{ name: 'dim_customer', status: 'matched', columns: [] }] });
+    expect(state().syncSelections).toEqual({});
+    expect(state().syncPlanGenerated).toBeNull();
+  });
+
   it('hiding the overlay clears sync state; showing it does not', () => {
     startSyncSession();
     state().setDiscrepancyVisible(true);

@@ -14,6 +14,9 @@ const aliasPattern = /^[a-z][a-z0-9_]*$/;
 const FOLDINGS: readonly IdentifierFolding[] = ['lower', 'upper', 'exact'];
 /** Exports written before `identifierFolding` existed are matched exactly, as they always were. */
 const foldingOf = (m: ProjectModel): IdentifierFolding => m.identifierFolding ?? 'exact';
+const hasBindings = (m: ProjectModel) => !!m.columnBindings && Object.keys(m.columnBindings).length > 0;
+const logicalName = (m: ProjectModel, name: string) => logicalSpelling(name, foldingOf(m), m.columnBindings);
+const displayName = (m: ProjectModel, name: string) => hasBindings(m) ? logicalName(m, name) : name;
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every(x => typeof x === 'string');
 const relative = (p: string) => !!p && !path.isAbsolute(p) && !p.includes('\\') && !p.split('/').includes('..') && !p.includes('\0');
@@ -80,6 +83,18 @@ export function parseSqlmeshSnapshot(raw: string): SqlmeshSnapshot {
         throw new Error(`Invalid columns for ${m.name}`);
       }
       cols.add(c.name);
+    }
+    if (m.columnBindings !== undefined) {
+      if (!object(m.columnBindings)) throw new Error(`Invalid column bindings for ${m.name}`);
+      const targets = new Set<string>();
+      for (const [alias, native] of Object.entries(m.columnBindings)) {
+        if (!aliasPattern.test(alias) || typeof native !== 'string' || !cols.has(native) || targets.has(native)) {
+          throw new Error(`Invalid or duplicate column binding for ${m.name}.${alias}`);
+        }
+        targets.add(native);
+      }
+      assertLogicalColumnMapping(m.name as string, m.columns as {name: string}[],
+        (m.identifierFolding as IdentifierFolding | undefined) ?? 'exact', m.columnBindings as Record<string, string>);
     }
     if (!m.uniqueKeys.every(k => strings(k) && k.length > 0 && k.every(c => cols.has(c)))) {
       throw new Error(`Invalid uniqueness evidence for ${m.name}`);
@@ -195,9 +210,15 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
         ...(w.diagnostic ? { diagnostic: w.diagnostic } : {}) } } : {}) };
   }
   getModel(name: string): ProjectModel | undefined { return this.snapshot?.models.find(m => m.name === name); }
+  nativeColumnName(modelName: string, alias: string): string | undefined {
+    const model = this.getModel(modelName);
+    if (!model) return undefined;
+    return hasBindings(model) ? model.columns.find(c => logicalName(model, c.name) === alias)?.name
+      : findByIdentifier(model.columns, alias, foldingOf(model))?.name;
+  }
   assertWritableModel(name: string): void {
     const model = this.getModel(name);
-    if (model) assertLogicalColumnMapping(model.name, model.columns, foldingOf(model));
+    if (model) assertLogicalColumnMapping(model.name, model.columns, foldingOf(model), model.columnBindings);
   }
   /** Resolve only the exported source, within this project's real filesystem root. */
   resolveSourceFile(name: string): string {
@@ -222,7 +243,8 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
     const one = (name: string, col: string) => {
       const model = this.getModel(name);
       if (!model) return false;
-      const column = findByIdentifier(model.columns, col, foldingOf(model));
+      const native = Object.prototype.hasOwnProperty.call(model.columnBindings ?? {}, col) ? model.columnBindings![col] : col;
+      const column = findByIdentifier(model.columns, native, foldingOf(model));
       return !!column && model.uniqueKeys.some(k => k.length === 1 && k[0] === column.name);
     };
     return one(fromModel, fromColumn)
@@ -238,9 +260,8 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
     const m = this.getModel(name);
     if (!m) return undefined;
     this.assertWritableModel(name);
-    const folding = foldingOf(m);
     return { name: m.name, schema: m.schema, description: m.description,
-      columns: m.columns.map(c => ({ name: logicalSpelling(c.name, folding), dataType: c.dataType ?? 'unknown', description: c.description })) };
+      columns: m.columns.map(c => ({ name: logicalName(m, c.name), dataType: c.dataType ?? 'unknown', description: c.description })) };
   }
 
   async load(): Promise<ProjectMetadata> {
@@ -259,18 +280,18 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
       const byId = new Map(snapshot.models.map(m => [m.id, m]));
       for (const m of snapshot.models) {
         manifest.models.set(m.name, { name: m.name, uniqueId: m.id, projectName: 'sqlmesh', schema: m.schema,
-          description: m.description, columns: m.columns.map(c => ({ name: c.name, data_type: c.dataType, description: c.description })),
+          description: m.description, columns: m.columns.map(c => ({ name: displayName(m, c.name), data_type: c.dataType, description: c.description })),
           ...(m.sourcePath ? { originalFilePath: m.sourcePath } : {}) });
-        manifest.uniqueColumns.set(m.name, new Set(m.uniqueKeys.filter(k => k.length === 1).map(k => k[0])));
-        manifest.compositeUniqueGroups.set(m.name, m.uniqueKeys.filter(k => k.length > 1));
+        manifest.uniqueColumns.set(m.name, new Set(m.uniqueKeys.filter(k => k.length === 1).map(k => displayName(m, k[0]))));
+        manifest.compositeUniqueGroups.set(m.name, m.uniqueKeys.filter(k => k.length > 1).map(k => k.map(c => displayName(m, c))));
       }
       // Consumed by Add Existing Model, which writes these into the domain file,
       // so column names carry their logical spelling; `relationshipCardinality`
       // folds when it looks the uniqueness evidence up again.
       manifest.relationshipTests = snapshot.relationships.map(r => {
         const from = byId.get(r.fromId)!; const to = byId.get(r.toId)!;
-        return { fromModel: from.name, fromColumn: logicalSpelling(r.fromColumn, foldingOf(from)),
-          toModel: to.name, toColumn: logicalSpelling(r.toColumn, foldingOf(to)) };
+        return { fromModel: from.name, fromColumn: logicalName(from, r.fromColumn),
+          toModel: to.name, toColumn: logicalName(to, r.toColumn) };
       });
       this.snapshot = snapshot;
       this.signature = signature;
@@ -325,16 +346,20 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
         existing.description ||= observation.description;
       }
       columns.push(...observationMatches.unmatchedTarget.map(c => ({ ...c })));
-      const designMatches = matchIdentifiers(columns, logical.columns ?? [], folding).pairs;
+      if (hasBindings(actual)) assertLogicalColumnMapping(actual.name, columns, folding, actual.columnBindings);
+      const displayColumns = columns.map(c => ({ ...c, name: displayName(actual, c.name),
+        ...(hasBindings(actual) ? { nativeName: c.name } : {}) }));
+      const displayFolding = hasBindings(actual) ? 'exact' as const : folding;
+      const designMatches = matchIdentifiers(displayColumns, logical.columns ?? [], displayFolding).pairs;
       return { name: logical.name, schema: actual.schema, description: actual.description,
         ...(actual.sourcePath ? { sourcePath: actual.sourcePath } : {}),
         qualifiedName: actual.id, columnsKnown: actual.columnsKnown || warehouse?.status === 'observed', existsInProject: true, warehouse,
-        identifierFolding: folding,
+        identifierFolding: displayFolding,
         rationale: logical.rationale, grain: logical.grain, modelRole: logical.modelRole,
         provenance: { columns: observed.length ? ['sqlmesh-observed' as const, source] : [source], types: observed.length ? 'sqlmesh-observed' as const : source },
-        columns: columns.map(c => {
+        columns: displayColumns.map(c => {
           const design = designMatches.get(c);
-          return { name: c.name, dataType: c.dataType ?? '', description: c.description,
+          return { name: c.name, ...(c.nativeName ? { nativeName: c.nativeName } : {}), dataType: c.dataType ?? '', description: c.description,
             isPrimaryKey: design?.isPrimaryKey ?? false, isForeignKey: design?.isForeignKey ?? false,
             isNaturalKey: design?.isNaturalKey ?? false, scdType: design?.scdType, additiveType: design?.additiveType };
         }) };
@@ -342,8 +367,9 @@ export class SqlmeshProjectAdapter implements ProjectAdapter {
     const relationships = this.snapshot.relationships.flatMap(r => {
       const from = byId.get(r.fromId)!; const to = byId.get(r.toId)!;
       if (!names.has(from.name) || !names.has(to.name)) return [];
-      const cardinality = this.relationshipCardinality(from.name, r.fromColumn, to.name, r.toColumn);
-      return [{ fromModel: from.name, fromColumn: r.fromColumn, toModel: to.name, toColumn: r.toColumn, cardinality }];
+      const fromColumn = displayName(from, r.fromColumn), toColumn = displayName(to, r.toColumn);
+      const cardinality = this.relationshipCardinality(from.name, fromColumn, to.name, toColumn);
+      return [{ fromModel: from.name, fromColumn, toModel: to.name, toColumn, cardinality }];
     });
     return { schemaVersion: domain.schemaVersion, domain: domain.domain, layer: domain.layer,
       description: domain.description, modelFolder: domain.modelFolder, stage: 'physical', models, relationships,

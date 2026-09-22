@@ -19,9 +19,12 @@ No worktrees. Do not mark full parity from fixture-only or mocked evidence.
    See [acceptance evidence](sqlmesh-editor-acceptance-results.md).
 3. **Consolidated evidence** — documented. Current status and acceptance evidence
    are linked from the historical handoffs and setup guide.
-4. **Explicit column bindings** — pending. Map safe logical names to exact native
+4. **Explicit column bindings** — passed. Map safe logical names to exact native
    identifiers consistently in import, display, comparison, relationships, both
    sync directions and AI/MCP guidance, with invalid/ambiguous mappings rejected.
+   Installed editor imported a spaced identifier, displayed its native hint, and
+   generated the correct alias-to-native source plan. 1,684 full JS tests plus
+   a stale-selection regression, 24 Python tests and 12 MCP smoke checks pass.
 5. **Automation and warehouse parity** — pending. Add optional metadata refresh
    after source edits; support and verify one remote-protocol warehouse adapter;
    work through domain execution, model lifecycle, composite relationships and

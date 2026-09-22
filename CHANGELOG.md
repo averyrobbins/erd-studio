@@ -12,6 +12,9 @@ heading — `## Unreleased — 1.0.0` — and the workflow releases exactly that
 
 ### Fixed
 
+- **SQLMesh column bindings:** optional per-model column aliases preserve quoted,
+  case-distinct and otherwise invalid logical names across import, display,
+  comparison, sync, relationship evidence, assistant plans and MCP output.
 - **SQLMesh source validation and editor refresh:** source plans carry an explicit
   state-free exporter command; assistant instructions avoid state-initializing
   `sqlmesh render`. Comparison updates after edits and grouped undo/redo. Real

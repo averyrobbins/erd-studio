@@ -170,3 +170,15 @@ copies/databases; the usual VS Code profile is unchanged.
 The next milestones are composite relationship/column bindings, reviewed domain
 execution, model creation/removal workflows and a selected remote warehouse adapter.
 Each needs explicit acceptance fixtures before claiming full feature parity.
+
+
+### Current parity work (2026-09-21/22)
+
+Native editor/Claude and read-only DuckDB acceptance is now recorded in
+[acceptance results](.planning/sqlmesh-editor-acceptance-results.md). Explicit
+column bindings support otherwise invalid logical identifiers across import,
+comparison, relationships, sync plans and MCP. Source plans include a state-free
+metadata refresh command. The [parity checklist](.planning/sqlmesh-parity-status.md)
+is the current implementation status; the assessment above preserves its original
+baseline. Automatic refresh, a remote-protocol warehouse, and remaining domain
+execution/model-lifecycle work are next.

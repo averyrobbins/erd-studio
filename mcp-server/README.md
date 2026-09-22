@@ -109,6 +109,8 @@ Follow the [exporter setup](../integrations/sqlmesh/README.md) to produce
 executes project code, or inspects warehouse tables. Declared/inferred SQLMesh
 types are distinct from optional saved warehouse observations. `list_project_models`
 includes observation environment/time/coverage and per-model relation/status/columns.
+With explicit column bindings, column `name` and relationship endpoints use logical
+aliases; `nativeName` retains the exact SQLMesh identifier.
 It never refreshes those observations itself. Audit declarations do not prove passing
 audits. Missing, stale or invalid snapshots are reported by `list_project_models`.
 

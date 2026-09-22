@@ -182,3 +182,23 @@ it('refuses a shared-column removal that would break another domain relationship
   expect(error()).toContain('referenced by a relationship in other');
   expect(edits.mock.calls.length).toBe(before);
 });
+
+it('imports explicitly bound case siblings through the editor with native hints in both stages', async () => {
+  const file = path.join(root, '.erd-studio/sqlmesh.json');
+  const snapshot = JSON.parse(fs.readFileSync(file, 'utf8'));
+  snapshot.models.push({ ...snapshot.models[0], name: 'bound', id: '"memory"."analytics"."bound"',
+    identifierFolding: 'upper', columns: [{ name: 'ID', dataType: 'INT', description: '' }, { name: 'id', dataType: 'TEXT', description: '' }],
+    uniqueKeys: [], columnBindings: { native_id: 'ID', quoted_id: 'id' } });
+  snapshot.integrity = snapshotIntegrity(snapshot);
+  fs.writeFileSync(file, JSON.stringify(snapshot));
+  await provider.refreshAllOpenDomains();
+  await panel._simulateMessage({ type: 'addExistingModel', payload: { modelName: 'bound' } });
+  expect(error()).toBeUndefined();
+  expect(models.getModel('bound')!.columns!.map(c => c.name)).toEqual(['native_id', 'quoted_id']);
+  const lastDomain = () => (panel._postedMessages as any[]).filter(m => m.type === 'domainLoaded').at(-1).payload;
+  expect(lastDomain().models.find((m: any) => m.name === 'bound').columns.map((c: any) => c.nativeName)).toEqual(['ID', 'id']);
+  await panel._simulateMessage({ type: 'switchStage', payload: { stage: 'physical' } });
+  expect(error()).toBeUndefined();
+  const switched = (panel._postedMessages as any[]).filter(m => m.type === 'stageData').at(-1);
+  expect(JSON.stringify(switched)).toContain('"nativeName":"ID"');
+});

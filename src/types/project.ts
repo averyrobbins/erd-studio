@@ -20,6 +20,8 @@ export interface ProjectModel {
   kind: string;
   sourcePath: string | null;
   columns: ProjectColumn[];
+  /** Safe logical alias -> exact SQLMesh column name. Optional in older exports. */
+  columnBindings?: Record<string, string>;
   columnsKnown: boolean;
   columnSource: 'declared' | 'inferred';
   uniqueKeys: string[][];

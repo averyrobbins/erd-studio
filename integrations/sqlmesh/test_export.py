@@ -60,6 +60,31 @@ class ExportTest(unittest.TestCase):
         self.assertEqual(exporter.canonical_json({"b": "\u00e9\U0001f600\x7f", "a": [1, None, True]}),
                          '{"a":[1,null,true],"b":"\\u00e9\\ud83d\\ude00\\u007f"}')
 
+    def test_explicit_column_bindings_preserve_native_metadata(self):
+        file = self.semantic / "sqlmesh-bindings.json"
+        bindings = json.loads(file.read_text())
+        bindings["columns"] = {"fct_order": {"order_key": "order_id", "customer_key": "customer_id"}}
+        file.write_text(json.dumps(bindings))
+        result = self.export()
+        order = next(m for m in result["models"] if m["name"] == "fct_order")
+        self.assertEqual(order["columnBindings"], bindings["columns"]["fct_order"])
+        self.assertEqual(order["columns"][0]["name"], "order_id")
+        self.assertEqual(result["relationships"][0]["fromColumn"], "customer_id")
+        self.assertIn(".erd-studio/sqlmesh-bindings.json", result["inputs"])
+
+    def test_invalid_column_bindings_fail_before_publishing(self):
+        file = self.semantic / "sqlmesh-bindings.json"
+        original = json.loads(file.read_text())
+        for columns in ({"absent_model": {"a": "order_id"}},
+                        {"fct_order": {"a": "missing"}},
+                        {"fct_order": {"a": "order_id", "b": "order_id"}},
+                        {"fct_order": {"Bad Alias": "order_id"}},
+                        {"fct_order": {"amount": "order_id"}}, []):
+            with self.subTest(columns=columns):
+                file.write_text(json.dumps({**original, "columns": columns}))
+                with self.assertRaisesRegex(ValueError, "[Cc]olumn binding|columns must"):
+                    self.export()
+
     def test_source_validation_does_not_initialize_warehouse_state(self):
         database = self.root / "warehouse.duckdb"
         config = self.root / "config.yaml"

@@ -1539,10 +1539,13 @@ export class SemanticEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     const models = domain.models.map((model) => {
-      const sourcePath = this.projectAdapter instanceof SqlmeshProjectAdapter ? this.projectAdapter.getModel(model.name)?.sourcePath : undefined;
+      const nativeModel = this.projectAdapter instanceof SqlmeshProjectAdapter ? this.projectAdapter.getModel(model.name) : undefined;
+      const sourcePath = nativeModel?.sourcePath;
       const fkCols = fkColumnsByModel.get(model.name) ?? new Set<string>();
       const columns = (model.columns ?? []).map((col) => ({
         name: col.name,
+        ...(nativeModel?.columnBindings && this.projectAdapter instanceof SqlmeshProjectAdapter
+          ? { nativeName: this.projectAdapter.nativeColumnName(model.name, col.name) } : {}),
         dataType: col.dataType,
         description: col.description,
         isPrimaryKey: col.isPrimaryKey === true,

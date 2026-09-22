@@ -203,6 +203,9 @@ def export_project(root: Path, semantic: Path, gateway: str | None, config: str 
         bindings = json.loads(bindings_file.read_text()) if bindings_file.exists() else {"version": 1, "models": {}}
         if bindings.get("version") != 1 or not isinstance(bindings.get("models"), dict):
             raise ValueError("sqlmesh-bindings.json must contain version: 1 and a models object")
+        column_bindings = bindings.get("columns", {})
+        if not isinstance(column_bindings, dict):
+            raise ValueError("sqlmesh-bindings.json columns must be an object keyed by logical model alias")
         aliases = {}
         used = set()
         for alias, model_id in bindings["models"].items():
@@ -295,6 +298,26 @@ def export_project(root: Path, semantic: Path, gateway: str | None, config: str 
                              "description": descriptions.get(name, "")} for name, dtype in (types or {}).items()],
                 "uniqueKeys": keys,
             })
+        by_alias = {m["name"]: m for m in models}
+        for alias, mapping in column_bindings.items():
+            if alias not in by_alias or not isinstance(mapping, dict):
+                raise ValueError(f"Invalid column bindings for unavailable model {alias}")
+            model = by_alias[alias]
+            names = {c["name"] for c in model["columns"]}
+            targets = set()
+            for logical, native in mapping.items():
+                if (not re.fullmatch(r"[a-z][a-z0-9_]*", logical) or not isinstance(native, str)
+                        or native not in names or native in targets):
+                    raise ValueError(f"Invalid or duplicate column binding for {alias}.{logical}")
+                targets.add(native)
+            if mapping:
+                inverse = {native: logical for logical, native in mapping.items()}
+                logical_names = [inverse.get(c["name"], c["name"] if model["identifierFolding"] == "exact"
+                                             else c["name"].lower()) for c in model["columns"]]
+                if (any(not re.fullmatch(r"[a-z][a-z0-9_]*", name) for name in logical_names)
+                        or len(set(logical_names)) != len(logical_names)):
+                    raise ValueError(f"Column bindings for {alias} leave invalid or colliding logical names")
+                model["columnBindings"] = mapping
         # Incomplete schemas should suppress unsupported evidence, not invalidate
         # the entire export (for example an external table without known columns).
         columns_by_id = {m["id"]: {c["name"] for c in m["columns"]} for m in models}

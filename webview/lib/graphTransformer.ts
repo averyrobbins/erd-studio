@@ -68,6 +68,7 @@ const DEFAULT_POSITION = { x: 0, y: 0 };
 function mapColumns(model: DisplayModel): ColumnDisplay[] {
   const mapped = model.columns.map((col) => ({
     name: col.name,
+    ...(col.nativeName ? { nativeName: col.nativeName } : {}),
     dataType: col.dataType,
     ...(col.description ? { description: col.description } : {}),
     isPrimaryKey: col.isPrimaryKey,

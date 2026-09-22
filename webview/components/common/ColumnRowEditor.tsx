@@ -23,6 +23,7 @@ import './ColumnRowEditor.css';
 
 export interface ColumnRowEditorColumn {
   name: string;
+  nativeName?: string;
   dataType: string;
   description: string;
   isPrimaryKey?: boolean;
@@ -565,7 +566,7 @@ export function ColumnRowEditor({
           <span
             className="column-row-editor__name"
             onDoubleClick={(e) => { e.stopPropagation(); handleFieldClick('name'); }}
-            title={mode !== 'readonly' ? 'Double-click to edit' : undefined}
+            title={column.nativeName ? `${column.name} → ${column.nativeName} (SQLMesh identifier)` : mode !== 'readonly' ? 'Double-click to edit' : undefined}
           >
             {localColumn.name || (
               <em className="column-row-editor__placeholder">column_name</em>
